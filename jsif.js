@@ -7,7 +7,11 @@
     ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝╚═════╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚══════╝
 */
 
-class Rulebook {
+/*
+  Following the execution model of Inform7, all actions are governed by RULEBOOKS. 
+  A RULEBOOK is really just a piece of code that gets run under a specific condition.
+*/
+class RULEBOOK {
   NAME;
   INSTEAD_RULES;
   PERFORM_RULES;
@@ -45,9 +49,10 @@ class Rule {
 
 var GLOBAL_RULES = {};
 
+/* This must be called after all the custom rulebooks for the game are declared, to put them in the proper order. */
 function prepare_rules() {
   for (var rulebookName in GLOBAL_RULES) {
-    if (GLOBAL_RULES[rulebookName] instanceof Rulebook) {
+    if (GLOBAL_RULES[rulebookName] instanceof RULEBOOK) {
       GLOBAL_RULES[rulebookName].INSTEAD_RULES.sort((a, b) => a.ORDER - b.ORDER);
       GLOBAL_RULES[rulebookName].PERFORM_RULES.sort((a, b) => a.ORDER - b.ORDER);
     }
