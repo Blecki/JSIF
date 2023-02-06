@@ -1,0 +1,425 @@
+<head>
+  <link rel="stylesheet" type="text/css" href="style.css" />
+  <script src="jsif.js"></script>
+</head>
+
+<div id="MANUAL" class="modal">
+  <div class="modal-content">
+    <div class="paper-pattern">
+      <div class="paper-content">
+        <div>RZ-RC-CCABOT training 1/28/4956 -</div>
+        <div>Common commands -</div>
+        <div>
+          <ul>
+            <li>LOOK - robot will scan and describe surroundings</li>
+            <li>GET [something] - robot will pick up an item. The robot figures out how on it's own</li>
+            <li>GO [direction] - robot navigates using ship directions, port, starboard, etc</li>
+            <li>OPEN [something] - I think there is programming in the robot to check if this makes sense first?</li>
+            <li>INVENTORY - Makes robot list what it's holding. Can just use I</li>
+            <li>USE [something] ON [something] - Complex object interactions. How does the robot know what to do?? Does it just guess??</li>
+          </ul>
+        </div>
+        <div>There were other commands but the instructor didn't list them all. Thankfully the robot has the HELP command which lists all the different actions it can perform.</div>        
+        <div style="position:absolute; bottom:10px; right:10px;" onclick="document.getElementById('MANUAL').style.display = 'none';">Close</div>
+      </div>
+      
+    </div>
+  </div>
+</div>
+
+<div class="crt body row parent"> 
+  <div class="flex-content">
+    <div class="scrollable-content-wrapper">
+      <div class="terminal scrollable-content" id="terminal"></div>
+    </div>
+  </div>
+  <div class="input_row" style="width: 100%;">
+    <div style="width: 100%; position:relative;">
+      <span style="position:absolute; left:0;">></span>
+      <span style="position:absolute; left: 20px; right:240px;">
+          <input style="width: 100%;" class="input" type="text" id="command"></input>
+      </span>
+      <span style="position:absolute; right:200;">
+          <button class="button" type="button" onclick="input()" id="parse_button">PARSE</button>
+      </span>
+      <span style="position:absolute; right:40;">
+          <button class="button" type="button" onclick="show_manual()">TRAINING NOTES</button>
+      </span>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  var input_enabled = true;
+  var current_div = null;
+
+  function start_new_div() {
+    current_div = document.createElement('div');
+    document.getElementById('terminal').appendChild(current_div);
+    current_div.scrollIntoView();
+  }
+
+  const delay = ms => new Promise(res => setTimeout(res, ms));
+  var emission_queue = "";
+
+  function emit(text, arguments, options) {
+    if (text === undefined)
+      return;
+    if (text instanceof Function)
+      emit(text(), arguments, options);
+
+    for (var i = 0; i < text.length; i += 1) {
+      if (text.charAt(i) == '{' && (options === undefined || options.EXPAND == true)) {
+        var expansionId = "";
+        i += 1; // Skip the opening {
+
+        while (i < text.length && text.charAt(i) != '}') {
+          expansionId += text.charAt(i);
+          i += 1;
+        } 
+
+        //i += 1; // Skip the closing }
+
+        if (arguments === undefined || arguments[expansionId] === undefined) emit ("{ERROR}", null, options);
+        else consider("NAMING", arguments[expansionId]);
+      }
+      else
+        emission_queue += text.charAt(i);
+    }
+  }
+
+  
+  async function clear_emission(options) {
+    for (var i = 0; i < emission_queue.length; i += 1) {
+      if (emission_queue.charAt(i) == '\n')
+        start_new_div();
+      else
+        current_div.innerText += emission_queue.charAt(i);
+        current_div.scrollIntoView();
+      if (options === undefined || options.INSTANT == false) await delay(10);
+    }
+    emission_queue = "";
+  }
+
+  function clear() {
+    document.getElementById("terminal").innerHTML = "";
+  }
+
+  var ship_pressurized = false;
+  var robot_repaired = false;
+
+  perform("LOOKING HERE", _ => ship_pressurized == false, "ATMOSPHERIC PRESSURE: 0 bars\n").last();
+  perform("LOOKING HERE", _ => ship_pressurized == true, "ATMOSPHERIC PRESSURE: 1.014 bars\n").last();
+  
+  var cargo_b_closet_control_panel = allocate_object();
+  cargo_b_closet_control_panel.NAME = "CONTROL PANEL";
+  cargo_b_closet_control_panel.NOUNS = ["CONTROL", "PANEL"];
+  cargo_b_closet_control_panel.FIXED = true;
+  cargo_b_closet_control_panel.OPEN = false;
+  cargo_b_closet_control_panel.CONTAINER = true;
+  cargo_b_closet_control_panel.SUPPORTER = true;
+  cargo_b_closet_control_panel.DESCRIPTION = "This is a small metal box afixed to the wall. There's nothing on the outside except scratched paint and what used to be a decal of an eagle.";
+
+  var cargo_b_closet = allocate_object();
+  cargo_b_closet.DESCRIPTION = "You are in a small storage closet used for storing XA-RC-CCABOTs when they are not in use.";
+  move_object(cargo_b_closet_control_panel, cargo_b_closet);
+
+  var cargo_b_cp_red_wire = allocate_object();
+  cargo_b_cp_red_wire.NAME = "THIN RED WIRE";
+  cargo_b_cp_red_wire.NOUNS = ["THIN", "RED", "WIRE"];
+  cargo_b_cp_red_wire.FIXED = true;
+  cargo_b_cp_red_wire.DESCRIPTION = "A spiral of thin red wire protrudes from the control panel.";
+  cargo_b_cp_red_wire.CUT = false;
+  move_object(cargo_b_cp_red_wire, cargo_b_closet_control_panel);
+
+  var cargo_b_door = allocate_object();
+  cargo_b_door.NAME = "MECHANIZED HATCH";
+  cargo_b_door.NOUNS = ["MECHANIZED", "HATCH"];
+  cargo_b_door.DESCRIPTION = "This is a big heavy door, standard on all SLV models. Large exposed gears open and close it even in pressure differentials as high as 1 atmosphere.";
+  cargo_b_door.OPEN = false;
+  cargo_b_door.FIXED = true;
+  cargo_b_door.LOCKED = true;
+  instead("UNLOCKING", _ => _.OBJECT == cargo_b_door && cargo_b_door.LOCKED, _ => {
+    emit("The latch won't turn at all. Doesn't that violate an OSHA regulation?\n"); 
+    _.COMMAND_FAILED = true; 
+  });
+
+  var toolbox = allocate_object();
+  toolbox.NAME = "TOOLBOX";
+  toolbox.NOUNS = ["TOOLBOX", "TOOL", "BOX", "TOOLS"];
+  toolbox.DESCRIPTION = "This is a small red toolbox. The plastic wrap has been removed, indicating the contents may be expired.";
+  toolbox.OPEN = false;
+  toolbox.CONTAINER = true;
+  toolbox.SUPPORTER = true;
+  move_object(toolbox, cargo_b_closet);
+
+  var snips = allocate_object();
+  snips.NAME = "TIN SNIPS";
+  snips.NOUNS = ["TIN", "SNIPS"];
+  snips.DESCRIPTION = "Snips! For cutting things. Please complete training module 22G-BW9 'the many dangers of snips' before operating this equipment";
+  move_object(snips, toolbox);
+  
+  understand("CUTTING", parse_sequence(parse_keyword("CUT"), parse_object("OBJECT")));
+  understand("CUTTING", parse_sequence(parse_keyword("SNIP"), parse_object("OBJECT")));
+  perform("CUTTING", _ => true, _ => emit("Cutting that wouldn't improve things.\n"));
+  instead("CUTTING", _ => snips.LOCATION != SELF, _ => emit("You haven't anything to cut with.\n"));
+  instead("CUTTING", _ => snips.LOCATION === SELF && _.OBJECT === cargo_b_cp_red_wire && cargo_b_cp_red_wire.CUT == false, _ => {
+    cargo_b_cp_red_wire.CUT = true;
+    cargo_b_door.LOCKED = false;
+    emit("A few sparks fly as you snip the red wire. The door makes a disturbing clunk.\n");
+    emit("Destruction of postal property has been annotated in your OPF.\n");
+  });
+  instead("CUTTING", _ => snips.LOCATION === SELF && _.OBJECT === cargo_b_cp_red_wire && cargo_b_cp_red_wire.CUT == true, _ => {
+    emit("You've already cut that, but it's not like you can get written up twice for it.\n");
+  });
+  instead("USING ON", _ => _.TOOL === snips && _.TARGET === cargo_b_cp_red_wire, _ => follow_command("CUT WIRE"));
+  // Make sure the player can type 'cut wire with snips' and have it succeed.
+  understand("CUTTING", parse_sequence(parse_keyword("CUT"), parse_object("OBJECT"), parse_keyword("WITH"), parse_object("TOOL")))
+    .when(_ => _.TOOL === snips);
+  
+  var cargo_b = allocate_object();
+  cargo_b.DESCRIPTION = "Cargo room B. This large spacious bay is used for storing parcels and sometimes sprs.";
+  link(cargo_b_closet, "STARBOARD", cargo_b, cargo_b_door);
+  link(cargo_b, "PORT", cargo_b_closet, cargo_b_door);
+
+  var express = allocate_object();
+  express.DESCRIPTION = "This is a priority express package addressed for betelgese.";
+  express.NAME = "EXPRESS PACKAGE";
+  express.NOUNS = ["EXPRESS", "PACKAGE"];
+  express.OPEN = false;
+  express.SUPPORTER = true;
+  move_object(express, cargo_b);
+  instead("OPENING", _ => _.OBJECT === express, _ => emit("Your attempt to violate federal law has been reported to the OIG.\n"));
+
+  var space = allocate_object();
+  space.DESCRIPTION = "YOU ARE IN SPACE, JUST BEHIND THE SHIP. THE SHIP ITSELF BLOCKS YOUR VIEW OF ANYTHING INTERESTING LIKE WHAT THE PILOT HIT, BUT THERE IS A PLUME OF AIR LEAKING FROM THE VENTRAL SIDE.";
+  instead("GOING", _ => CURRENT_ROOM === space && _.DIRECTION != "FORE" && robot_repaired == false, _ => emit("WITHOUT WORKING THRUSTERS, YOU CAN'T SEE ANYWAY TO GO THAT WAY."));
+
+  var cargo_door = allocate_object();
+  cargo_door.NAME = "CARGO DOOR";
+  cargo_door.NOUNS = ["CARGO", "DOOR"];
+  cargo_door.DESCRIPTION = "A massive door of corrugated steel. It rolls up into the ceiling when you open it.";
+  cargo_door.OPEN = false;
+  instead("OPENING", _ => _.OBJECT === cargo_door && ship_pressurized == true, _ => {
+    emit("There's nothing but space on the other side of that door. If you open it, ALL THE AIR WILL GET OUT\n");
+    _.COMMAND_FAILED = true;
+  });
+
+  link(cargo_b, "AFT", space, cargo_door);
+  link(space, "FORE", cargo_b, cargo_door);
+
+  var swing_hub = allocate_object();
+  swing_hub.DESCRIPTION = () => {
+    return "This is the swing room and central hub of the manned section of the PE-921096. This is the only approved break location aboard" 
+      + (music.ON ? ". YOU CAN HEAR MUFFLED MUSIC COMING FROM THE PILOTS CABIN TO THE FORE\n" : "");
+  };
+  link(cargo_b, "FORE", swing_hub);
+  link(swing_hub, "AFT", cargo_b);
+
+  var _console = allocate_object("COMPUTER CONSOLE");
+  _console.DESCRIPTION = () => {
+    if (_console.ON) {
+      if (_console.HAS_PASSWORD)
+        return "THE CONSOLE IS SHOWING THE PDI FORM";
+      else
+        return "This is an obsolete ACE4 workstation. It still appears to work, though. It is powered on and waiting for a password";
+    }
+    else return "This is an obsolete ACE4 workstation. The screen is dark.";
+  };
+  _console.FIXED = true;
+  _console.OPEN = false;
+  _console.ON = false;
+  _console.HAS_PASSWORD = false;
+  _console.CONTAINER = true;
+  _console.SUPPORTER = true;
+  _console.MOVED = false;
+  move_object(_console, swing_hub);
+  instead("OPENING", _ => _.OBJECT === _console && _console.ON == true, _ => emit("Don't open it now, you've already fixed it."));
+  instead("PUSHING", _ => _.OBJECT === _console && _console.MOVED == false, _ => {
+    emit("YOU PUSH THE CONSOLE ASIDE, REVEALING SOME KIND OF MAINTENANCE DOOR");
+    _console.MOVED = true;
+    link(swing_hub, "PORT", access_tunnel, maintenance_door);
+  }).first();
+  perform("DESCRIBING", _ => _ === _console && _console.MOVED == false, _ => emit(" THERE SEEMS TO BE SOME KIND OF GAP BEHIND IT"));
+
+  var mother_board = allocate_object("MOTHERBOARD");
+  mother_board.DESCRIPTION = () => {
+    return "This is the motherboard of an obsolete ace4 workstation" 
+    + (_console.ON ? "" : ". There is a large suspiciously empty spot with a lightning bolt symbol printed in the middle of it.");
+  };
+  mother_board.FIXED = true;
+  move_object(mother_board, _console);
+
+  var sticky_note = allocate_object("STICKY NOTE");
+  sticky_note.NOUNS.push("STICKYNOTE");
+  sticky_note.DESCRIPTION = "SOMEONE HAS WRITTEN ON THIS NOTE: \"THE TITLE OF THAT SONG BUT THE E'S ARE 3'S\"";
+  move_object(sticky_note, _console, "ON");
+
+  var pilot_cabin = allocate_object();
+  pilot_cabin.DESCRIPTION = () => {
+    return "This is the pilot's cabin, where the pilotting happens. There's not a lot of space" + 
+      (music.ON ? ". The same song is playing on repeat.\n \n*  Oh the misery\n*  Everybody wants to be my enemy\n*  Spare the sympathy\n*  Everybody wants to be\n*  My enemy-y-y-y-y\n \n" : "" );
+  };
+
+  var cabin_hatch = allocate_object("CABIN HATCH");
+  cabin_hatch.DESCRIPTION = "This iris hatch separates the pilot's cabin from the swing hub.";
+  cabin_hatch.OPEN = false;
+  cabin_hatch.LOCKED = true;
+  instead("UNLOCKING", _ => _.OBJECT === cabin_hatch && ship_pressurized == false, _ => {
+    emit ("THIS HATCH HAS BEEN AUTOMATICALLY SEALED TO PREVENT EXPOSING PILOT TO VACUUM. EXPOSING BIOLOGICAL EMPLOYEES TO VACUUM VIOLATES ELM 342-11.98, 'VACUUM CAN BE FATAL TO BIOLOGICAL EMPLOYEES AND IS NOT RECOMMEND FOR REPEATED EXPOSURE'");
+    _.COMMAND_FAILED = true;
+  });
+
+  link(swing_hub, "FORE", pilot_cabin, cabin_hatch);
+  link(pilot_cabin, "AFT", swing_hub, cabin_hatch);
+
+  var pilot = allocate_object("PILOT");
+  pilot.DESCRIPTION = () => {
+    if (pilot.AWAKE) return "THIS IS THE PILOT, THE REGULAR CARRIER. HE HAS SUSTAINED MINOR INJURIES";
+    else return "THIS IS THE PILOT, THE REGULAR CARRIER. HE IS UNCONSCIOUS";
+  };
+  pilot.AWAKE = false;
+  pilot.FIXED = true;
+  pilot.SUPPORTER = true;
+  move_object(pilot, pilot_cabin);
+  instead("TAKING", _ => _.OBJECT === pilot, _ => emit("HE APPEARS MUCH TOO HEAVY")).first();
+
+  var music = allocate_object("MUSIC PLAYER");
+  music.DESCRIPTION = () => {
+    return "AN ANTIQUE MUSIC PLAYING DEVICE" + 
+      (music.ON ? ". The same song is playing on repeat.\n \n*  Oh the misery\n*  Everybody wants to be my enemy\n*  Spare the sympathy\n*  Everybody wants to be\n*  My enemy-y-y-y-y\n \n" : "");
+  };
+  music.ON = true;
+  music.OPEN = false;
+  music.FIXED = true;
+  music.CONTAINER = true;
+  move_object(music, pilot_cabin);
+  instead("TAKING", _ => _.OBJECT === music, _ => emit("THE PILOT IS HOLDING ONTO THAT VERY TIGHTLY")).first();
+
+  var viewscreen = allocate_object("VIEWSCREEN");
+  viewscreen.NOUNS.push("VIEW");
+  viewscreen.NOUNS.push("SCREEN");
+  viewscreen.FIXED = true;
+  viewscreen.DESCRIPTION = "THROUGH THE FORWARD VIEWSCREEN YOU CAN SEE VERY CLEARLY THE OBJECT THE PILOT STRUCK - IT IS A LARGE SPACESHIP PAINTED IN GARISH ORANGE AND PURPLE WITH \"FEDEX\" ON THE SIDE.";
+  move_object(viewscreen, pilot_cabin);
+
+  var battery = allocate_object("BATTERY");
+  battery.DESCRIPTION = "A PRIMITIVE NINE-VOLT CAPACITATIVE DEVICE";
+  move_object(battery, music);
+  instead("TAKING", _ => _.OBJECT === battery && battery.LOCATION === music, _ => {
+    emit("Taking the {OBJECT}\n", _);
+    emit("THAT MUSIC FINALLY STOPS PLAYING\n");
+    move_object(_.OBJECT, SELF);
+    music.ON = false;
+  });
+  understand("LICKING", parse_sequence(parse_keyword("LICK"), parse_object("OBJECT")));
+  instead("LICKING", _ => _.OBJECT === battery, "OKAY, YES, I ACTUALLY DO UNDERSTAND WHY YOU WANT TO LICK THAT. BUT I STILL DO NOT HAVE A TONGUE\n");
+  instead("LICKING", _ => true, "I DO NOT UNDERSTAND WHY YOU WOULD WANT TO LICK THAT, AND ALSO I DO NOT HAVE A TONGUE\n");
+
+  instead("PUTTING", _ => _.OBJECT === battery && _.LOCATION === mother_board, _ => {
+    emit("YOU SLOT THE BATTERY INTO THE MOTHERBOARD. THE CONSOLE HUMS TO LIFE!\n");
+    move_object(battery, mother_board, "ON");
+    _console.ON = true;
+  }).first();
+
+  instead("PERFORM", _ => _.OBJECT === battery && battery.LOCATION === mother_board, _ => {
+    emit("WRENCHING THE BATTERY FREE ALSO POWERS DOWN THE COMPUTER CONSOLE.\n");
+    move_object(battery, SELF);
+    _console.ON = false;
+  });
+
+  understand("TYPING", parse_sequence(parse_keyword("TYPE"), parse_string("TEXT")));
+  instead("TYPING", _ => CURRENT_ROOM !== swing_hub, "THERE'S NOTHING HERE TO TYPE ON\n");
+  instead("TYPING", _ => _console.ON == false, "WOULD PROBABLY HELP IF THE CONSOLE WAS ON FIRST\n");
+  perform("TYPING", _ => true, _ => {
+    emit("YOU TYPE THAT INTO THE CONSOLE\n");
+    if (_.TEXT == "3V3RYBODY WANTS TO B3 MY 3N3MY") {
+      _console.HAS_PASSWORD = true;
+      emit("THE CONSOLE ACCEPTS THAT PASSWORD.\n");
+    }
+    else
+      emit("THE CONSOLE BEEPS FURIOUSLY. THAT IS NOT THE CORRECT PASSWORD\n");
+  });
+  
+  var CURRENT_ROOM = swing_hub;
+  var SELF = allocate_object();
+  SELF.DESCRIPTION = "This is you. You are a sophisticated robot controlled remotely through a state-of-the-art AI command interface called a *command prompt*.";
+
+
+  async function input() {
+    if (input_enabled) {
+      input_enabled = false; // Disable input until command is entirely done executing.
+      var command = document.getElementById("command").value.toUpperCase();
+      document.getElementById("command").value = "";
+      document.getElementById("command").focus();
+      emit("\n \n");
+      emit("> " + command + "\n");
+      follow_command(command);
+      await clear_emission();
+      input_enabled = true;
+    }
+  }
+
+  var commandInput = document.getElementById("command");
+  commandInput.addEventListener("keyup", function(event) {
+    if (event.keyCode === 13) {
+        event.preventDefault();
+        document.getElementById("parse_button").click();
+    }
+  });
+
+  async function startup() {
+    start_new_div();
+    prepare_rules();
+    input_enabled = false;
+    emit("PRESENTING\n");
+    emit("            (    (    (    (     \n");
+    emit("            )\\ ) )\\ ) )\\ ) )\\ )  \n");
+    emit("        (  (()/((()/((()/((()/(  \n");
+    emit("        )\\  /(_))/(_))/(_))/(_)) \n");
+    emit("     _ ((_)(_)) (_)) (_)) (_))   \n");
+    emit("    | | | |/ __|/ __|| _ \\/ __|  \n");
+    emit("    | |_| |\\__ \\\\__ \\|  _/\\__ \\  \n");
+    emit("     \\___/ |___/|___/|_|  |___/  \n");
+    emit("UNIVERSAL SUPER SPACE POSTAL SERVICE IN ~ ~\n");
+    emit("   ~~ AT FAULT ACCIDENT ~~\n");
+    emit("## XZ-RC-CCABOT 9000 CONNECTION: SUCCESS\n");
+    delay(1000);
+    emit("## BOOTING XZ Remote Control CCA Bot Protocol; MODEL: 9000\n");
+    delay(1000);
+    emit("## The most sophisticated robotic substitute ever created, the XZ-RC-CCABOT is capable of delivery in even the most dangerous conditions of deep space. Remote connection successful. You have connected to XZ-RC-CCABOT 9000 CDNXFN32-47A. XZ-RC-CCABOTs are equipped with a powerful command-based remote control interface.\n");
+    delay(1000);
+    emit("## DIAGNOSTIC: UNIT DAMAGED\n");
+    delay(1000);
+    emit("## Current location: USPSSS POTENT EXPRESS 921096 enroute to BETELGESE with priority express\n");
+    delay(1000);
+    emit("## PE-921096 STATUS: DAMAGED\n");
+    delay(1000);
+    emit("## FILING REPAIR TAG WITH VMF.......REPAIR TAG FILED. ESTIMATED TIME UNTIL TECHNICIAN ARRIVAL: 1,022,298,108 days.\n");
+    delay(1000);
+    emit("## ROOT CAUSE: ACCIDENT\n");
+    delay(1000);
+    emit("## ACCIDENT TYPE: AT-FAULT COLLISION WITH MOVING OBJECT [DISCIPLINE APPLIED TO OPF: LOW]\n");
+    delay(1000);
+    emit("## PRIORITY: ASSES CONDITION OF VEHICLE OPERATOR\n");
+    delay(1000);
+    emit("## PRIORITY: ASSES CONDITION OF PE-921096\n");
+    delay(1000);
+    emit("## PRIORITY: COMPLETE DELIVERY OF PRIORITY EXPRESS [TIME REMAINING: 334,982 DAYS]\n");
+    delay(1000);
+    emit("## PRIORITY: PERFORM AT-FAULT ACCIDENT PDI\n");
+    delay(1000);
+    emit("## Begin diagnostic exploration? [Type 'LOOK' to examine your suroundings.]\n");
+    commandInput.focus();
+    await clear_emission();
+    input_enabled = true;
+  }
+
+  function show_manual() {
+    document.getElementById("MANUAL").style.display = "block";
+  }
+
+  startup();
+</script>
+
