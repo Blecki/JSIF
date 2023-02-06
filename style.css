@@ -1,0 +1,214 @@
+.crt:before {
+  content: " ";
+  display: flex;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(
+      to bottom,
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.25) 50%
+  );
+  background-size: 100% 8px;
+  z-index: 2;
+  pointer-events: none;
+  max-height: 100%;
+}
+
+@import url("https://fonts.googleapis.com/css?family=VT323&display=swap");
+
+.terminal {
+    font-family: "VT323", monospace;
+    text-transform: uppercase;
+    /*top: 0;
+    /*bottom: -100;
+    /*position: absolute;*/
+    font-size: 16px;   
+    display: block;
+    overflow-y: auto;
+    /*max-height: inherit;*/
+    white-space: pre-wrap;
+    white-space: -moz-pre-wrap;
+    white-space: -pre-wrap;
+    white-space: -o-pre-wrap;
+    word-wrap: break-word;
+}
+
+body {
+  background-color: black;
+  color: #46a312;
+  min-height: 100vh;
+  min-width: 100vh;
+  height: 100%;
+  width: 100%;
+  /*display: flex;*/
+  margin: 0;
+}
+
+.crt {
+  background-color: #0f2602;
+  color: #46a312;
+  margin: 10px;
+  border-radius: 30px;
+  padding: 20px;
+  padding-bottom: 30px;
+  overflow-y: auto;
+  /*position: relative;*/
+}
+
+.input {
+  background: transparent;
+  border: none;
+  color: #46a312;
+  font-family: "VT323", monospace;
+  text-transform: uppercase;
+  font-size: 16px;
+  width:100%;
+}
+
+.input_row {
+  position: absolute;
+  bottom: 0;
+  padding-top: 20px;
+  margin-bottom: 10px;
+}
+
+.input:focus {
+  outline:none;
+}
+
+.button {
+  position:relative;
+  background: transparent;
+  border: none;
+  color: #46a312;
+  font-family: "VT323", monospace;
+  text-transform: uppercase;
+  font-size: 16px;
+  float: right;
+}
+
+.button:focus {
+  outline:none;
+}
+
+@media screen { 
+  
+  /* start of screen rules. */ 
+  
+  /* Generic pane rules */
+  body { margin: 0 }
+  .row, .col { overflow: hidden; position: absolute; }
+  .row { left: 0; right: 0; }
+  .col { top: 0; bottom: 0; }
+  .scroll-x { overflow-x: auto; }
+  .scroll-y { overflow-y: auto; }
+
+  .header.row { height: 75px; top: 0; }
+  .body.row { top: 0px; bottom: 0px; }
+  .footer.row { height: 50px; bottom: 0; }
+  
+  /* end of screen rules. */ 
+}
+
+.flex-content {
+  flex-grow: 1;
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.scrollable-content-wrapper {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  overflow: auto;
+}
+
+.parent {
+  /*height: 100%;*/
+  /*outline: 1px solid red;*/
+}
+
+/* width */
+::-webkit-scrollbar {
+  width: 20px;
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  box-shadow: inset 0 0 5px grey;
+  border-radius: 10px;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #46a312;
+  border-radius: 10px;
+}
+
+
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 10000; /* Sit on top */
+  padding-top: 40px; /* Location of the box */
+  left: 0;
+  top: 0;
+  width: 100%; /* Full width */
+  height: 100%; /* Full height */
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgb(0,0,0); /* Fallback color */
+  background-color: rgba(0,0,0,0.4); /* Black w/ opacity */
+}
+
+/* Modal Content */
+.modal-content {
+  background-color: #fefefe;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid #888;
+   width: 600px;
+  height: 700px;
+  position: relative;
+  margin: 20px auto;
+  padding-top: 40px;
+  padding-bottom: 40px;
+  background-color: white;
+  box-shadow: 0px 0px 5px 0px #888;
+}
+
+/* styling red vertical line */
+.modal-content::before {
+  content: '';
+  width: 2px;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 40px;
+  background-color: rgba(255,0,0,0.6);
+}
+
+.paper-pattern {
+  height: 100%;
+  background-image: repeating-linear-gradient(white 0px, white 24px, teal 25px);
+}
+
+.paper-content {
+  padding-top: 6px;
+  padding-left: 56px;
+  padding-right: 16px;
+  line-height: 25px;
+  font-size: 19px;
+  letter-spacing: 1px;
+  word-spacing: 5px;
+  color: black;
+  font-style: italic;
+  position: relative;
+  height: 100%;
+}
