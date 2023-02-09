@@ -1,3 +1,60 @@
+/***
+ *     ██████╗ ██╗   ██╗████████╗██████╗ ██╗   ██╗████████╗
+ *    ██╔═══██╗██║   ██║╚══██╔══╝██╔══██╗██║   ██║╚══██╔══╝
+ *    ██║   ██║██║   ██║   ██║   ██████╔╝██║   ██║   ██║   
+ *    ██║   ██║██║   ██║   ██║   ██╔═══╝ ██║   ██║   ██║   
+ *    ╚██████╔╝╚██████╔╝   ██║   ██║     ╚██████╔╝   ██║   
+ *     ╚═════╝  ╚═════╝    ╚═╝   ╚═╝      ╚═════╝    ╚═╝   
+ *                                                         
+ */
+
+/*
+  Can't have a game without OUTPUT. It's up to the page wrapper to actually handle displaying the generated text.
+*/
+
+var EMISSION_QUEUE = "";
+
+function EMIT(text, arguments, options) {
+  if (text === undefined)
+    return;
+  if (text instanceof Function)
+    EMIT(text(), arguments, options);
+
+  for (var i = 0; i < text.length; i += 1) {
+    if (text.charAt(i) == '{' && (options === undefined || options.EXPAND == true)) {
+      var expansionId = "";
+      i += 1; // Skip the opening {
+
+      while (i < text.length && text.charAt(i) != '}') {
+        expansionId += text.charAt(i);
+        i += 1;
+      } 
+
+      //i += 1; // Skip the closing }
+
+      if (arguments === undefined || arguments[expansionId] === undefined) EMIT("{ERROR}", null, options);
+      else CONSIDER("NAMING", arguments[expansionId]);
+    }
+    else
+      EMISSION_QUEUE += text.charAt(i);
+  }
+}
+
+function GET_EMISSION_QUEUE() {
+  return EMISSION_QUEUE;
+}
+
+function CLEAR_EMISSION_QUEUE() {
+  EMISSION_QUEUE = "";
+}
+
+/*
+  This function should be called after all rules are defined and before any input is processed.
+*/
+function START_GAME() {
+  PREPARE_RULES();
+}
+
 /* 
     ██████╗ ██╗   ██╗██╗     ███████╗██████╗  ██████╗  ██████╗ ██╗  ██╗███████╗
     ██╔══██╗██║   ██║██║     ██╔════╝██╔══██╗██╔═══██╗██╔═══██╗██║ ██╔╝██╔════╝
@@ -9,7 +66,10 @@
 
 /*
   Following the execution model of Inform7, all actions are governed by RULEBOOKS. 
-  A RULEBOOK is really just a piece of code that gets run under a specific condition.
+  A RULE is really just a piece of code that gets run under a specific condition, 
+    and RULEBOOKS are a group of these RULES.
+  INSTEAD RULES are checked first, and if any match, they will be executed and execution will stop.
+  PERFORM RULES are run in order if none of the INSTEAD RULES matched.
 */
 class RULEBOOK {
   NAME;
@@ -23,34 +83,52 @@ class RULEBOOK {
   }
 }
 
-class Rule {
-  WHEN;
-  EXEC;
+class RULE {
+  _WHEN;
+  _THEN;
   ORDER;
 
-  constructor(when_clause, exec_clause) {
-    this.WHEN = when_clause;
-    this.EXEC = exec_clause;
+  constructor() {
+    this._WHEN = _ => true;
+    this._THEN = _ => {};
     this.ORDER = 1;
   }
 
-  last() {
+  LAST() {
     this.ORDER = 2;
+    return this;
   }
 
-  first() {
+  FIRST() {
     this.ORDER = 0;
+    return this;
   }
 
   toString() {
-    return "WHEN [" + String(this.WHEN) + "] THEN [" + String(this.EXEC) + "]";
+    return "WHEN [" + String(this._WHEN) + "] THEN [" + String(this._THEN) + "]";
+  }
+
+  WHEN(criteria) {
+    this._WHEN = criteria;
+    return this;
+  }
+
+  THEN(code) {
+    if (typeof code == "string") {
+      var inner_text = code;
+      code = _ => EMIT(inner_text);
+    }
+
+    this._THEN = code;
+    return this;
   }
 }
 
+/* Wait, why are these in the global namespace? To make the code simpler and easier to understand. There's no dependancies so who cares? */
 var GLOBAL_RULES = {};
 
 /* This must be called after all the custom rulebooks for the game are declared, to put them in the proper order. */
-function prepare_rules() {
+function PREPARE_RULES() {
   for (var rulebookName in GLOBAL_RULES) {
     if (GLOBAL_RULES[rulebookName] instanceof RULEBOOK) {
       GLOBAL_RULES[rulebookName].INSTEAD_RULES.sort((a, b) => a.ORDER - b.ORDER);
@@ -61,87 +139,79 @@ function prepare_rules() {
 
 const RULE_RESULT = {
 	CONTINUE: Symbol("RULE_RESULT_CONTINUE"),
-  ABORT: Symbol("RULE_RESULT_ABORT")
+  ABORT: Symbol("RULE_RESULT_ABORT") // Return this from a PERFORM RULE to stop considering the RULEBOOK.
 };
 
-function perform(rulebook_name, when_clause, exec_clause) {
-  if (typeof exec_clause == "string") {
-    var inner_text = exec_clause;
-    exec_clause = _ => emit(inner_text);
-  }
-
+/* 
+  Declare a PERFORM RULE in the given RULEBOOK.
+*/
+function PERFORM(rulebook_name) {
   if (!GLOBAL_RULES.hasOwnProperty(rulebook_name))
-    GLOBAL_RULES[rulebook_name] = new Rulebook(rulebook_name);
-  var r = new Rule(when_clause, exec_clause);
+    GLOBAL_RULES[rulebook_name] = new RULEBOOK(rulebook_name);
+  var r = new RULE();
   GLOBAL_RULES[rulebook_name].PERFORM_RULES.push(r);
   return r;
 }
 
-function instead(rulebook_name, when_clause, exec_clause) {
-  if (typeof exec_clause == "string") {
-    var inner_text = exec_clause;
-    exec_clause = _ => emit(inner_text);
-  }
-  
+/* 
+  Declare an INSTEAD RULE in the given RULEBOOK.
+*/
+function INSTEAD(rulebook_name) {
   if (!GLOBAL_RULES.hasOwnProperty(rulebook_name))
-    GLOBAL_RULES[rulebook_name] = new Rulebook(rulebook_name);
-  var r = new Rule(when_clause, exec_clause);
+    GLOBAL_RULES[rulebook_name] = new RULEBOOK(rulebook_name);
+  var r = new RULE();
   GLOBAL_RULES[rulebook_name].INSTEAD_RULES.push(r);
   return r;
 }
 
-function consider(rulebook_name, arguments) {
+/*
+  Consider a RULEBOOK, executing any appropriate RULES.
+*/
+function CONSIDER(rulebook_name, arguments) {
   if (RULES_TRACE) {
     console.log("! CONSIDERING RULEBOOK " + rulebook_name);
     console.log(arguments);
   }
 
   if (!GLOBAL_RULES.hasOwnProperty(rulebook_name)) {
-    if (RULES_TRACE)
-      console.log("! NO SUCH RULEBOOK.");
+    if (RULES_TRACE) console.log("! NO SUCH RULEBOOK.");
     return;
   }
 
+  // First check the INSTEAD RULES. If one matches, execute it and stop considering.
   var matched_instead_rule = false;
   for (var rule of GLOBAL_RULES[rulebook_name].INSTEAD_RULES) {
-    if (RULES_TRACE)
-      console.log("! CHECKING INSTEAD " + rulebook_name + " " + String(rule));
-    if (rule.WHEN(arguments)) {
-      if (RULES_TRACE) 
-        console.log("! MATCHED, EXECUTING.");
-      rule.EXEC(arguments); // Result type of instead rules does not matter; they always abort. BUT - they need a way to report 'failure' or 'success'.
-      if (RULES_TRACE)
-        console.log("! DONE CONSIDERING.");
+    if (RULES_TRACE) console.log("! CHECKING INSTEAD " + rulebook_name + " " + String(rule));
+    if (rule._WHEN(arguments)) {
+      if (RULES_TRACE) console.log("! MATCHED, EXECUTING.");
+      rule._THEN(arguments); // Result type of instead rules does not matter; they always abort. BUT - they need a way to report 'failure' or 'success'.
+      if (RULES_TRACE) console.log("! DONE CONSIDERING.");
       return;
     }
     else {
-      if (RULES_TRACE)
-        console.log("! DIDN'T MATCH");
+      if (RULES_TRACE) console.log("! DIDN'T MATCH");
     }
   }
 
+  // Now check the PERFORM RULES.
   for (var rule of GLOBAL_RULES[rulebook_name].PERFORM_RULES) {
     if (RULES_TRACE) 
       console.log("! CHECKING PERFORM " + rulebook_name + " " + String(rule));
 
-    if (rule.WHEN(arguments)) {
-      if (RULES_TRACE) 
-        console.log("! MATCHED, EXECUTING.");
-      var rule_result = rule.EXEC(arguments);
-      if (rule_result == RULE_RESULT.ABORT) {
-        if (RULES_TRACE)
-          console.log("! RULE ABORTED CONSIDERATION, DONE CONSIDERING.");
+    if (rule._WHEN(arguments)) {
+      if (RULES_TRACE) console.log("! MATCHED, EXECUTING.");
+      var rule_result = rule._THEN(arguments);
+      if (rule_result == RULE_RESULT.ABORT) { // Normally all PERFORM RULES are run, but they can abort execution.
+        if (RULES_TRACE) console.log("! RULE ABORTED CONSIDERATION, DONE CONSIDERING.");
         return;
       }      
     }
     else {
-      if (RULES_TRACE)
-        console.log("! DIDN'T MATCH");
+      if (RULES_TRACE) console.log("! DIDN'T MATCH");
     }
   }
 
-  if (RULES_TRACE)
-    console.log("! DONE CONSIDERING.");
+  if (RULES_TRACE) console.log("! DONE CONSIDERING.");
 }
 
 /***
@@ -154,14 +224,21 @@ function consider(rulebook_name, arguments) {
  *                                               
  */
 
-class GameObject {
-  ID = -1;
+/*
+  The WORLD MODEL represents the rooms, objects, and exits in the game.
+  Wait, why is everything in all-caps?? I WRITE A LOT OF SQL AND IT IS JUST HABIT AT THIS POINT.
+*/
+
+/*
+  Everything in the game is a GAMEOBJECT.
+*/
+class GAMEOBJECT {
   CONTENTS;
   LINKS;
   LOCATION;
   NAME;
   NOUNS;
-  RELATIVE_LOCATION;
+  RELATIVE_LOCATION; // Describes where this object is relative it's LOCATION - IN, ON, ETC.
 
   constructor(NAME) {
     this.LINKS = [];
@@ -172,38 +249,26 @@ class GameObject {
     }
   }
 
-  get_link(direction) {
-    for (var link of this.LINKS) {
-      if (link.DIRECTION == direction) 
-        return link;
-    }
-    return null;
-  }
-
   toString() {
     if (this.NAME === null || this.NAME === undefined)
-      return String(this.ID);
+      return "UNNAMED OBJECT";
     if (this.NAME instanceof Function)
       return String(this.NAME());
     return String(this.NAME);
   }
 }
 
-var current_id = 0;
-
-function allocate_object(NAME) {
-  var r = new GameObject(NAME);
-  r.ID = current_id;
-  current_id += 1;
-  return r;
+function NOUNS(object, additional_nouns) {
+  for (var noun of additional_nouns.split(" "))
+    object.NOUNS.push(noun);
 }
 
-function object_equals(a, b) {
-  return a.ID == b.ID;
-}
+/*
+  MOVE a GAMEOBJECT into another GAMEOBJECT
+*/
+function MOVE(object, destination, relative_location) {
 
-function move_object(object, destination, relative_location) {
-
+  // First remove from current location.
   if (object.hasOwnProperty("LOCATION")
     && object.LOCATION != null
     && object.LOCATION !== undefined
@@ -211,10 +276,8 @@ function move_object(object, destination, relative_location) {
     {
       object.LOCATION.CONTENTS = object.LOCATION.CONTENTS.filter(_ => object !== _);
     }
-
-  if (!destination.hasOwnProperty("CONTENTS"))
-    destination.CONTENTS = [];
-
+  
+  // Now stick in the new location.
   destination.CONTENTS.push(object);
   object.LOCATION = destination;
   object.RELATIVE_LOCATION = relative_location;
@@ -222,7 +285,10 @@ function move_object(object, destination, relative_location) {
     object.RELATIVE_LOCATION = "IN";
 }
 
-function link(object, direction, destination, door) {
+/*
+  Create a LINK between two GAMEOBJECTS that can be followed with the GOING action.
+*/
+function LINK(object, direction, destination, door) {
   object.LINKS.push({
     DIRECTION: direction,
     DESTINATION: destination,
@@ -230,7 +296,21 @@ function link(object, direction, destination, door) {
   });
 }
 
-function get_contents(object, relative_location) {
+/*
+  Look up a LINK in the specified direction.
+*/
+function GET_LINK(object, direction) {
+  for (var link of object.LINKS) {
+    if (link.DIRECTION == direction) 
+      return link;
+  }
+  return null;
+}
+
+/*
+  Retrieve an array of the contents of a GAMEOBJECT, filtered to the specified relative_location.
+*/
+function GET_CONTENTS(object, relative_location) {
   var r = [];
   for (var item of object.CONTENTS)
     if (item.RELATIVE_LOCATION == relative_location)
@@ -238,10 +318,37 @@ function get_contents(object, relative_location) {
   return r;
 }
 
-perform("DESCRIBING", _ => _.DESCRIPTION !== undefined, _ => emit(_.DESCRIPTION));
-perform("NAMING", _ => !(_ instanceof GameObject), _ => emit(String(_)));
-perform("NAMING", _ => _.NAME === null || _.NAME === undefined, _ => emit(_.ID));
-perform("NAMING", _ => true, _ => emit(_.NAME));
+/*
+  Create an object that won't be listed in the room or container but can still be looked at.
+  There's a rule to explicitly forbid taking these; no need for one to forbid dropping them since the player can't ever get them.
+*/
+function DETAIL(object, name, description) {
+  var detail = new GAMEOBJECT(name);
+  detail.DESCRIPTION = description;
+  MOVE(detail, object, "DETAIL");
+}
+
+/*
+  Define two basic actions, DESCRIBING and NAMING, that provide hooks into the output mechanism for
+  customizing the way objects are displayed.
+*/
+PERFORM("DESCRIBING").WHEN(_ => _.DESCRIPTION !== undefined).THEN(_ => {
+  EMIT(_.DESCRIPTION);
+  EMIT("\n");
+}).LAST(); 
+  // Marking this last makes it easy for things to override it.
+
+PERFORM("NAMING").WHEN(_ => !(_ instanceof GAMEOBJECT)).THEN(_ => EMIT(String(_)));
+PERFORM("NAMING").WHEN(_ => _.NAME === null || _.NAME === undefined).THEN(_ => EMIT("UNNAMED OBJECT")).LAST();
+PERFORM("NAMING").THEN(_ => EMIT(_.NAME)).LAST();
+
+/* 
+  A couple of global variables here hold some shared game state.
+*/
+
+var CURRENT_ROOM = new GAMEOBJECT("VOID");
+CURRENT_ROOM.DESCRIPTION = "THIS IS THE VOID.";
+var SELF = new GAMEOBJECT();
 
 /***
  *    ██████╗  █████╗ ██████╗ ███████╗██╗███╗   ██╗ ██████╗ 
@@ -253,7 +360,12 @@ perform("NAMING", _ => true, _ => emit(_.NAME));
  *                                                          
  */
 
-class parse_context {
+/* 
+  It's not PARSER IF without a PARSER. JSIF implements a basic recursive descent parser. It takes only a few
+  primitives to construct a parser for all the basic IF commands.
+*/
+
+class PARSECONTEXT {
   PLACE;
   WORDS;
   STATUS;
@@ -264,7 +376,7 @@ class parse_context {
   }
 
   clone() {
-    var r = new parse_context(this.PLACE, this.WORDS);
+    var r = new PARSECONTEXT(this.PLACE, this.WORDS);
     for (var prop in this)
       r[prop] = this[prop];
     return r;
@@ -309,11 +421,11 @@ class parse_context {
   }
 }
 
-var parse_success = { SUCCESS: true };
-var parse_failure = { SUCCESS: false };
-var parse_ambigious = { SUCCESS: false };
+var parse_success = { SUCCESS: true, AMBIG: false };
+var parse_failure = { SUCCESS: false, AMBIG: false };
+var parse_ambigious = { SUCCESS: false, AMBIG: true };
 
-class Parser {
+class PARSER {
   PARSE_FUNCTION;
   DESCRIPTION;
 
@@ -323,12 +435,11 @@ class Parser {
   }
 }
 
-// These need to be objects so that the HELP command can output the tree.
-function parse_keyword(word) {
-  return new Parser(
+function KEYWORD(word) {
+  return new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE KEYWORD: " + word + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE KEYWORD: " + word + " - " + String(context) + "\n", null, {EXPAND: false});
       if (context.next_word() == word) {
         return context.advance().with_status(parse_success);
       }
@@ -338,11 +449,11 @@ function parse_keyword(word) {
     word);
 }
 
-function parse_string(into) {
-  return new Parser(
+function REST(into) {
+  return new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE STRING: " + into + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE STRING: " + into + " - " + String(context) + "\n", null, {EXPAND: false});
       var text = "";
       while (!context.at_end()) {
         text += " " + context.next_word();
@@ -355,11 +466,11 @@ function parse_string(into) {
   "[REST -> " + into + "]");
 }
 
-function parse_alternative(...parts) {
-  var r = new Parser(
+function ALTERNATIVE(...parts) {
+  var r = new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE ALTERNATIVE: " + r.DESCRIPTION + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE ALTERNATIVE: " + r.DESCRIPTION + " - " + String(context) + "\n", null, {EXPAND: false});
 
       for (var part of parts) {
         var result = part.PARSE_FUNCTION(context);
@@ -378,11 +489,11 @@ function parse_alternative(...parts) {
   return r;
 }
 
-function parse_sequence(...parts) {
-  var r = new Parser(
+function SEQUENCE(...parts) {
+  var r = new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE SEQUENCE: " + r.DESCRIPTION + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE SEQUENCE: " + r.DESCRIPTION + " - " + String(context) + "\n", null, {EXPAND: false});
 
       for (var part of parts) {
         context = part.PARSE_FUNCTION(context);
@@ -411,9 +522,14 @@ function find_visible_scope(search_object, into) {
         into.push(item);
         find_visible_scope(item, into);
       }
+
       if (item.RELATIVE_LOCATION == "IN" && search_object.CONTAINER == true && search_object.OPEN != false) {
         into.push(item);
         find_visible_scope(item, into);
+      }
+
+      if (item.RELATIVE_LOCATION == "DETAIL") {
+        into.push(item);
       }
     }
   }
@@ -423,11 +539,14 @@ function find_visible_scope(search_object, into) {
       into.push(link.DOOR);
 }
 
-function parse_object(field) {
-  return new Parser(
+/*
+  The most complex of parsers, and the most important! It matches all the things in scope.
+*/
+function THING(field) {
+  return new PARSER(
     (context) => {
       if (PARSE_TRACE) 
-        emit("PARSE OBJECT: " + field + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE OBJECT: " + field + " - " + String(context) + "\n", null, {EXPAND: false});
 
       // This should be an actual recursive search to find all visible objects.
       var possible_set = [];
@@ -437,17 +556,17 @@ function parse_object(field) {
       while(true) {
 
         if (PARSE_TRACE)
-          emit("*  C: " + String(context) + " POSSIBLE SET: " + String(possible_set) + "\n", null, {EXPAND: false, INSTANT: true});
+          EMIT("*  C: " + String(context) + " POSSIBLE SET: " + String(possible_set) + "\n", null, {EXPAND: false});
         
         if (context.at_end() && possible_set.length > 1) {
           if (PARSE_TRACE)
-            emit("*  OH NO, AMBIG!\n", null, {EXPAND: false, INSTANT: true});
+            EMIT("*  OH NO, AMBIG!\n", null, {EXPAND: false});
           return context.with_status(parse_ambigious);
         }
 
         if (context.at_end() && possible_set.length == 1) {
           if (PARSE_TRACE)
-            emit("*  RAN OUT, BUT IT'S FINE!\n", null, {EXPAND: false, INSTANT: true});
+            EMIT("*  RAN OUT, BUT IT'S FINE!\n", null, {EXPAND: false});
           var r = context.with_status(parse_success);
           r[field] = possible_set[0];
           return r;
@@ -462,7 +581,7 @@ function parse_object(field) {
 
         if (next_set.length == 0 && possible_set.length == 1) {
           if (PARSE_TRACE)
-            emit("*  NEXT WORD DIDN'T MATCH, BUT IT'S FINE!\n", null, {EXPAND: false, INSTANT: true});
+            EMIT("*  NEXT WORD DIDN'T MATCH, BUT IT'S FINE!\n", null, {EXPAND: false});
           var r = context.with_status(parse_success);
           r[field] = possible_set[0];
           return r;
@@ -472,7 +591,7 @@ function parse_object(field) {
 
         if (possible_set.length == 0) {
           if (PARSE_TRACE)
-            emit("*  NOTHING MATCHED??\n", null, {EXPAND: false, INSTANT: true});
+            EMIT("*  NOTHING MATCHED??\n", null, {EXPAND: false});
           return context.with_status(parse_failure);
         }
 
@@ -494,14 +613,21 @@ var __directions = [
   { ID: "S",         MAPPED: "STARBOARD" },
   { ID: "P",         MAPPED: "PORT" },
   { ID: "U",         MAPPED: "UP" },
-  { ID: "D",         MAPPED: "DOWN" }
+  { ID: "D",         MAPPED: "DOWN" },
+  { ID: "NORTH",     MAPPED: "NORTH" },
+  { ID: "EAST",      MAPPED: "EAST" },
+  { ID: "SOUTH",     MAPPED: "SOUTH" },
+  { ID: "WEST",      MAPPED: "WEST" },
+  { ID: "N",         MAPPED: "NORTH" },
+  { ID: "E",         MAPPED: "EAST" },
+  { ID: "W",         MAPPED: "WEST" }  
 ];
 
-function parse_direction(field) {
-  return new Parser(
+function DIRECTION(field) {
+  return new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE DIRECTION: " + field + " - " + String(context) + "\n", null, {EXPAND: false, INSTANT: true});
+        EMIT("PARSE DIRECTION: " + field + " - " + String(context) + "\n", null, {EXPAND: false});
 
       if (context.at_end())
         return context.with_status(parse_failure);
@@ -524,11 +650,11 @@ var __rellocs = [
   { ID: "IN", MAPPED: "IN" }
 ];
 
-function parse_relloc(field) {
-  return new Parser(
+function RELLOC(field) {
+  return new PARSER(
     (context) => {
       if (PARSE_TRACE)
-        emit("PARSE RELLOC: " + field + " - " + String(context) + "\n");
+        EMIT("PARSE RELLOC: " + field + " - " + String(context) + "\n");
 
       if (context.at_end())
         return context.with_status(parse_failure);
@@ -556,6 +682,11 @@ function parse_relloc(field) {
  *                                                                                                                                                        
  */
 
+/*
+  We have a WORLD, we have a PARSER, we have RULES. Now we need to tie that all together: 
+    PARSE the player's command and execute the correct RULEBOOK.
+*/
+
 var COMMANDS = [];
 var MANPAGES = [];
 
@@ -572,19 +703,19 @@ class COMMAND {
     this.UNDERSTAND = UNDERSTAND;
   }
 
-  when(FILTER) {
+  WHEN(FILTER) {
     this.FILTER = FILTER;
     return this;
   }
 }
 
-function understand(understand_as, parser) {
+function UNDERSTAND(understand_as, parser) {
   var _command = new COMMAND(parser, understand_as);
   COMMANDS.push(_command);
   return _command;
 }
 
-class MANPAGE {
+class _MANPAGE {
   TOPIC;
   HELP;
 
@@ -594,12 +725,12 @@ class MANPAGE {
   }
 }
 
-function manpage(action, help) {
-  var page = new MANPAGE(action, help);
+function MANPAGE(action, help) {
+  var page = new _MANPAGE(action, help);
   MANPAGES.push(page);
 }
 
-function follow_command(command) {
+function FOLLOW_COMMAND(command) {
   console.log(command);
   PARSE_TRACE = false;
   RULES_TRACE = false;
@@ -610,59 +741,62 @@ function follow_command(command) {
     if (word != '') words.push(word);
 
   if (words.length == 0) {
-    emit("You didn't type anything.\n");
+    EMIT("You didn't type anything.\n");
     return;
   }
 
   if (words[0].charAt(0) == '@') {
-    emit("ACTIVATING PARSER TRACE.\n");
+    console.log("ACTIVATING PARSER TRACE.\n");
     words[0] = words[0].substring(1);
     if (words[0] == "") {
-      emit("Uh?");
+      EMIT("Uh?");
       return;
     }
     PARSE_TRACE = true;
   }
 
   if (words[0].charAt(0) == '!') {
-    emit("ACTIVATING RULES TRACE.\n");
+    console.log("ACTIVATING RULES TRACE.\n");
     words[0] = words[0].substring(1);
     if (words[0] == "") {
-      emit("Uh?");
+      EMIT("Uh?");
       return;
     }
     RULES_TRACE = true;
   }
 
-  var context = new parse_context(0, words);
+  var context = new PARSECONTEXT(0, words);
   var first_partial_command = null;
   for (var command of COMMANDS) {
-    if (PARSE_TRACE)
-      emit("###\nTRYING ACTION " + command.UNDERSTAND + "\n", null, {EXPAND: false, INSTANT: true});
+    if (PARSE_TRACE) console.log("###\nTRYING ACTION " + command.UNDERSTAND + "\n");
     var parse_results = command.PARSER.PARSE_FUNCTION(context);
     if (parse_results.STATUS.SUCCESS) {
       if (parse_results.at_end()) {
         if (command.FILTER !== undefined && command.FILTER(parse_results) == false)
           continue;
         console.log("Understood as " + command.UNDERSTAND);
-        return follow_parsed_command(command, parse_results);
+        return FOLLOW_PARSED_COMMAND(command.UNDERSTAND, parse_results);
       }
       else {
         if (first_partial_command == null)
           first_partial_command = command;
       }
     }
+    else if (parse_results.STATUS.AMBIG) {
+      EMIT("I UNDERSTOOD PART OF THAT AS THE " + command.UNDERSTAND + " action, but wasn't sure which object you were referring to.");
+      return false;
+    }
   }
   if (first_partial_command != null)
-    emit("I understood part of that as the " + first_partial_command.UNDERSTAND + " action.\n");
+    EMIT("I understood part of that as the " + first_partial_command.UNDERSTAND + " action.\n");
   else
-    emit("I did not understand that.\n");
+    EMIT("I did not understand that.\n");
   return true;
 }
 
-function follow_parsed_command(command, parse_results) {
+function FOLLOW_PARSED_COMMAND(command, parse_results) {
   parse_results.COMMAND_FAILED = false;
-  consider(command.UNDERSTAND, parse_results);
+  CONSIDER(command, parse_results);
   return parse_results.COMMAND_FAILED;
 }
 
@@ -676,270 +810,278 @@ function follow_parsed_command(command, parse_results) {
  *                                                                                                                  
  */
 
-understand("TESTING", parse_keyword("TEST"));
-perform("TESTING", (_) => true, (_) => { emit("TESTING!\n")});
+UNDERSTAND("TESTING", KEYWORD("TEST"));
+PERFORM("TESTING").THEN("TESTING!\n");
 
-understand("HELP", parse_keyword("HELP"));
-perform("HELP", _ => true, _ => {
-  emit("HERE IS A LIST OF EVERY ACTION I CAN PERFORM:\n");
+UNDERSTAND("HELP", KEYWORD("HELP"));
+PERFORM("HELP").THEN(_ => {
+  EMIT("HERE IS A LIST OF EVERY ACTION I CAN PERFORM:\n");
   var commandNames = [];
   for (var command of COMMANDS)
     commandNames.push(command.UNDERSTAND);
   let uniqueItems = [...new Set(commandNames)]
   for (var command of uniqueItems)
-    emit(command + "\n");
-  emit("TRY 'HELP [ACTION]' FOR HELP ABOUT A SPECIFIC ACTION\n");
+    EMIT(command + "\n");
+  EMIT("TRY 'HELP [ACTION]' FOR HELP ABOUT A SPECIFIC ACTION\n");
 });
 
-understand("HELP WITH", parse_sequence(parse_keyword("HELP"), parse_string("TOPIC")));
-perform("HELP WITH", _ => true, _ => {
-  emit("HERE IS EVERYTHING I KNOW ABOUT THE TOPIC " + _.TOPIC + "\n", null, {EXPAND: false});
+UNDERSTAND("HELP WITH", SEQUENCE(KEYWORD("HELP"), REST("TOPIC")));
+PERFORM("HELP WITH").THEN(_ => {
+  EMIT("HERE IS EVERYTHING I KNOW ABOUT THE TOPIC " + _.TOPIC + "\n", null, {EXPAND: false});
   var relevantCommands = [];
   for (var command of COMMANDS)
     if (command.UNDERSTAND == _.TOPIC)
       relevantCommands.push(command);
   if (relevantCommands.length > 0) {
-    emit("THERE ARE (" + relevantCommands.length + ") COMMANDS THAT I UNDERSTAND AS PERFORMING THIS ACTION.\n", null, {EXPAND: false});
+    EMIT("THERE ARE (" + relevantCommands.length + ") COMMANDS THAT I UNDERSTAND AS PERFORMING THIS ACTION.\n", null, {EXPAND: false});
     for (var command of relevantCommands)
-      emit("*  " + command.PARSER.DESCRIPTION + "\n", null, {EXPAND: false});
+      EMIT("*  " + command.PARSER.DESCRIPTION + "\n", null, {EXPAND: false});
   }
   for (var manpage of MANPAGES) 
     if (manpage.TOPIC == _.TOPIC)
-      emit("\n" + manpage.HELP + "\n", null, {EXPAND: false});
+      EMIT("\n" + manpage.HELP + "\n", null, {EXPAND: false});
 });
 
-var DEBUG_COMMAND = understand("DEBUGGING", parse_sequence(parse_keyword("X"), parse_object("OBJECT")));
-perform("DEBUGGING", _ => true, _ => {
-  emit("PROPERTIES OF [{OBJECT}]\n", _, {EXPAND: false, INSTANT: true});
+var DEBUG_COMMAND = UNDERSTAND("DEBUGGING", SEQUENCE(KEYWORD("X"), THING("OBJECT")));
+PERFORM("DEBUGGING").THEN(_ => {
+  EMIT("PROPERTIES OF [{OBJECT}]\n", _, {EXPAND: false});
   for (var propertyName in _.OBJECT)
-    if (_.OBJECT[propertyName] instanceof GameObject)
-      emit("*  " + propertyName + " : [{" + propertyName + "}]\n", _.OBJECT, {EXPAND: true, INSTANT: true})
+    if (_.OBJECT[propertyName] instanceof GAMEOBJECT)
+      EMIT("*  " + propertyName + " : [{" + propertyName + "}]\n", _.OBJECT, {EXPAND: true})
     else
-      emit("*  " + propertyName + " : " + String(_.OBJECT[propertyName]) + "\n", null, {EXPAND: false, INSTANT: true});
+      EMIT("*  " + propertyName + " : " + String(_.OBJECT[propertyName]) + "\n", null, {EXPAND: false});
 });
 
-understand("DEBUGGING HERE", parse_sequence(parse_keyword("X"), parse_keyword("HERE")));
-perform("DEBUGGING HERE", _ => true, _ => follow_parsed_command(DEBUG_COMMAND, { OBJECT: CURRENT_ROOM }));
+UNDERSTAND("DEBUGGING HERE", SEQUENCE(KEYWORD("X"), KEYWORD("HERE")));
+PERFORM("DEBUGGING HERE").THEN(_ => FOLLOW_PARSED_COMMAND("DEBUGGING", { OBJECT: CURRENT_ROOM }));
 
-understand("DEBUGGING ME", parse_sequence(parse_keyword("X"), parse_keyword("ME")));
-perform("DEBUGGING ME", _ => true, _ => follow_parsed_command(DEBUG_COMMAND, { OBJECT: SELF }));
+UNDERSTAND("DEBUGGING ME", SEQUENCE(KEYWORD("X"), KEYWORD("ME")));
+PERFORM("DEBUGGING ME").THEN(_ => FOLLOW_PARSED_COMMAND("DEBUGGING", { OBJECT: SELF }));
 
-understand("RULES", parse_sequence(parse_keyword("RULES"), parse_string("RULEBOOK")));
-perform("RULES", _ => true, _ => {
-  emit("RULEBOOK NAMED " + _.RULEBOOK + "\n", null, {EXPAND: false, INSTANT: true});
+UNDERSTAND("RULES", SEQUENCE(KEYWORD("RULES"), REST("RULEBOOK")));
+PERFORM("RULES").THEN(_ => {
+  EMIT("RULEBOOK NAMED " + _.RULEBOOK + "\n", null, {EXPAND: false});
   if (GLOBAL_RULES[_.RULEBOOK] === undefined) 
-    emit("UNDEFINED\n", null, {EXPAND: false, INSTANT: true});
+    EMIT("UNDEFINED\n", null, {EXPAND: false});
   else {
     for (var rule of GLOBAL_RULES[_.RULEBOOK].INSTEAD_RULES)
-      emit("INSTEAD WHEN [" + String(rule.WHEN) + "] THEN [" + String(rule.EXEC) + "]\n", null, {EXPAND: false, INSTANT: true});
+      EMIT("INSTEAD WHEN [" + String(rule._WHEN) + "] THEN [" + String(rule._THEN) + "]\n", null, {EXPAND: false});
     for (var rule of GLOBAL_RULES[_.RULEBOOK].PERFORM_RULES)
-      emit("PERFORM WHEN [" + String(rule.WHEN) + "] THEN [" + String(rule.EXEC) + "]\n", null, {EXPAND: false, INSTANT: true});
+      EMIT("PERFORM WHEN [" + String(rule._WHEN) + "] THEN [" + String(rule._THEN) + "]\n", null, {EXPAND: false});
   }
 });
 
-understand("RULEBOOKS", parse_keyword("RULEBOOKS"));
-perform("RULEBOOKS", _ => true, _ => {
-  emit("ALL RULEBOOKS:\n", null, {EXPAND: false, INSTANT: true});
+UNDERSTAND("RULEBOOKS", KEYWORD("RULEBOOKS"));
+PERFORM("RULEBOOKS").THEN(_ => {
+  EMIT("ALL RULEBOOKS:\n", null, {EXPAND: false});
   for (var rulebookName in GLOBAL_RULES)
-    emit(rulebookName + "\n", null, {EXPAND: false, INSTANT: true});
+    EMIT(rulebookName + "\n", null, {EXPAND: false});
 });
 
-understand("LOOKING HERE", parse_keyword("LOOK"));
-understand("LOOKING HERE", parse_sequence(parse_keyword("LOOK"), parse_keyword("HERE")));
-understand("LOOKING HERE", parse_keyword("L"));
-understand("LOOKING HERE", parse_sequence(parse_keyword("L"), parse_keyword("HERE")));
+UNDERSTAND("LOOKING HERE", KEYWORD("LOOK"));
+UNDERSTAND("LOOKING HERE", SEQUENCE(KEYWORD("LOOK"), KEYWORD("HERE")));
+UNDERSTAND("LOOKING HERE", KEYWORD("L"));
+UNDERSTAND("LOOKING HERE", SEQUENCE(KEYWORD("L"), KEYWORD("HERE")));
 
-perform("LOOKING HERE", (_) => true, (_) => {
-  emit("## SCANNING LOCATION.....\n");
-  consider("DESCRIBING", CURRENT_ROOM);
-  emit("\n");
+PERFORM("LOOKING HERE").THEN(_ => {
+  EMIT("## SCANNING LOCATION.....\n");
+  CONSIDER("DESCRIBING", CURRENT_ROOM);
+  EMIT("\n");
   if (CURRENT_ROOM.CONTENTS.length > 0) {
-    emit("STUFF HERE:\n");
+    EMIT("STUFF HERE:\n");
     for(var item of CURRENT_ROOM.CONTENTS) {
-      emit("*  {ITEM}\n", {ITEM: item});
+      EMIT("*  {ITEM}\n", {ITEM: item});
     }
   }
 
   if (CURRENT_ROOM.LINKS.length > 0) {
-    emit("YOU CAN GO:\n");
+    EMIT("I CAN GO:\n");
     for(var link of CURRENT_ROOM.LINKS) {
       if (link.DOOR) 
-        emit("*  " + link.DIRECTION + " [THROUGH {DOOR}]\n", link);
+        EMIT("*  " + link.DIRECTION + " [THROUGH {DOOR}]\n", link);
       else
-        emit("*  " + link.DIRECTION + "\n");
+        EMIT("*  " + link.DIRECTION + "\n");
     }
   }
 });
 
-understand("LOOKING AT", parse_sequence(parse_keyword("LOOK"), parse_keyword("AT"), parse_object("OBJECT")));
-understand("LOOKING AT", parse_sequence(parse_keyword("L"), parse_keyword("AT"), parse_object("OBJECT")));
-understand("LOOKING AT", parse_sequence(parse_keyword("LOOK"), parse_object("OBJECT")));
-understand("LOOKING AT", parse_sequence(parse_keyword("L"), parse_object("OBJECT")));
+UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("LOOK"), KEYWORD("AT"), THING("OBJECT")));
+UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("L"), KEYWORD("AT"), THING("OBJECT")));
+UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("LOOK"), THING("OBJECT")));
+UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("L"), THING("OBJECT")));
 
-perform("LOOKING AT", (_) => true, (_) => {
-  emit("## SCANNING [{OBJECT}]\n", _);
-  consider("DESCRIBING", _.OBJECT);
-  emit("\n");
+PERFORM("LOOKING AT").THEN(_ => {
+  EMIT("## SCANNING [{OBJECT}]\n", _);
+  CONSIDER("DESCRIBING", _.OBJECT);
+  EMIT("\n");
 
-  var items_on = get_contents(_.OBJECT, "ON");
+  var items_on = GET_CONTENTS(_.OBJECT, "ON");
   if (items_on.length > 0) {
-    emit("ON IT IS:\n");
+    EMIT("ON IT IS:\n");
     for (var item of items_on)
-      emit("*  {ITEM}\n", {ITEM: item});
+      EMIT("*  {ITEM}\n", {ITEM: item});
   }
 
   if (_.OBJECT.CONTAINER == true) {
     if (_.OBJECT.OPEN != false) {
-      var items_inside = get_contents(_.OBJECT, "IN");
+      var items_inside = GET_CONTENTS(_.OBJECT, "IN");
       if (items_inside.length > 0) {
-        emit("IT IS OPEN. INSIDE:\n");
+        EMIT("IT IS OPEN. INSIDE:\n");
         for(var item of items_inside) {
-          emit("*  {ITEM}\n", {ITEM: item});
+          EMIT("*  {ITEM}\n", {ITEM: item});
         }
       }
       else
-        emit("IT IS OPEN, AND ALSO EMPTY.\n");
+        EMIT("IT IS OPEN, AND ALSO EMPTY.\n");
     }
     else
-      emit("IT IS CLOSED.\n");
+      EMIT("IT IS CLOSED.\n");
   }
 });
 
-var LOOK_INSIDE = understand("LOOKING IN", parse_sequence(parse_keyword("LOOK"), parse_keyword("IN"), parse_object("OBJECT")));
+var LOOK_INSIDE = UNDERSTAND("LOOKING IN", SEQUENCE(KEYWORD("LOOK"), KEYWORD("IN"), THING("OBJECT")));
 
-instead("LOOKING IN", (_) => _.OBJECT.CONTAINER != true, _ => emit("The concept of \"in\" doesn't seem to apply to that\n"));
-instead("LOOKING IN", (_) => _.OBJECT.OPEN == false, _ => emit("It's closed\n"));
-perform("LOOKING IN", _ => true, _ => {
-  emit("INSIDE [{OBJECT}] IS:\n", _);
-  var items = get_contents(_.OBJECT, "IN");
+INSTEAD("LOOKING IN").WHEN(_ => _.OBJECT.CONTAINER != true).THEN(_ => EMIT("The concept of \"in\" doesn't seem to apply to that\n"));
+INSTEAD("LOOKING IN").WHEN(_ => _.OBJECT.OPEN == false).THEN(_ => EMIT("It's closed\n"));
+PERFORM("LOOKING IN").THEN(_ => {
+  EMIT("INSIDE [{OBJECT}] IS:\n", _);
+  var items = GET_CONTENTS(_.OBJECT, "IN");
   if (items.length == 0)
-    emit("...NOTHING!\n");
+    EMIT("...NOTHING!\n");
   else
     for(var item of items) {
-      emit("*  {ITEM}\n", {ITEM: item});
+      EMIT("*  {ITEM}\n", {ITEM: item});
   }
 });
 
-understand("LISTING INVENTORY", parse_alternative(parse_keyword("I"), parse_keyword("INV"), parse_keyword("INVENTORY")));
-understand("LISTING INVENTORY", parse_sequence(parse_keyword("LOOK"), parse_keyword("ME")));
-understand("LISTING INVENTORY", parse_sequence(parse_keyword("L"), parse_keyword("ME")));
+UNDERSTAND("LISTING INVENTORY", ALTERNATIVE(KEYWORD("I"), KEYWORD("INV"), KEYWORD("INVENTORY")));
+UNDERSTAND("LISTING INVENTORY", SEQUENCE(KEYWORD("LOOK"), KEYWORD("ME")));
+UNDERSTAND("LISTING INVENTORY", SEQUENCE(KEYWORD("L"), KEYWORD("ME")));
 
-perform("LISTING INVENTORY", (_) => true, (_) => {
-  consider("DESCRIBING", SELF);
-  emit("\n");
+PERFORM("LISTING INVENTORY").THEN(_ => {
+  CONSIDER("DESCRIBING", SELF);
+  EMIT("\n");
   if (SELF.hasOwnProperty("CONTENTS")) {
-    emit("You got:\n");
+    EMIT("I got:\n");
     if (SELF.CONTENTS.length == 0)
-      emit("...NOTHING!\n");
+      EMIT("...NOTHING!\n");
     else
       for(var item of SELF.CONTENTS) {
-        emit("*  {ITEM}\n", {ITEM: item});
+        EMIT("*  {ITEM}\n", {ITEM: item});
     }
   }
 });
 
-understand("PUSHING", parse_sequence(parse_keyword("PUSH"), parse_object("OBJECT")));
-instead("PUSHING", _ => true, _ => emit("Doesn't seem to do anything\n"));
+UNDERSTAND("PUSHING", SEQUENCE(KEYWORD("PUSH"), THING("OBJECT")));
+INSTEAD("PUSHING").THEN(_ => EMIT("Doesn't seem to do anything\n"));
 
-understand("TAKING", parse_sequence(parse_keyword("GET"), parse_object("OBJECT")));
-understand("TAKING", parse_sequence(parse_keyword("TAKE"), parse_object("OBJECT")));
+UNDERSTAND("TAKING", SEQUENCE(KEYWORD("GET"), THING("OBJECT")));
+UNDERSTAND("TAKING", SEQUENCE(KEYWORD("TAKE"), THING("OBJECT")));
 
-instead("TAKING", (_) => _.OBJECT.FIXED == true, (_) => { emit("That is firmly attached, you couldn't possibly take it.\n"); });
-instead("TAKING", _ => _.OBJECT.LOCATION === SELF, _ => emit("YOU ALREADY HAVE THAT.\n"));
+INSTEAD("TAKING").WHEN(_ => _.OBJECT.FIXED == true).THEN(_ => { EMIT("That is firmly attached, I couldn't possibly take it.\n"); });
+INSTEAD("TAKING").WHEN(_ => _.OBJECT.LOCATION === SELF).THEN(_ => EMIT("I ALREADY HAVE THAT.\n"));
+INSTEAD("TAKING").WHEN(_ => _.OBJECT.RELATIVE_LOCATION == "DETAIL").THEN("IF THAT WAS SOMETHING I COULD TAKE I WOULD HAVE LISTED IT OUT FOR YOU.");
 
-perform("TAKING", (_) => true, (_) => {
-  emit("Taking the {OBJECT}\n", _);
-  move_object(_.OBJECT, SELF);
+PERFORM("TAKING").THEN(_ => {
+  EMIT("Taking the {OBJECT}\n", _);
+  MOVE(_.OBJECT, SELF);
 });
 
-understand("DROPPING", parse_sequence(parse_keyword("DROP"), parse_object("OBJECT")));
-understand("DROPPING", parse_sequence(parse_keyword("DISCARD"), parse_object("OBJECT")));
+UNDERSTAND("DROPPING", SEQUENCE(KEYWORD("DROP"), THING("OBJECT")));
+UNDERSTAND("DROPPING", SEQUENCE(KEYWORD("DISCARD"), THING("OBJECT")));
 
-instead("DROPPING", _ => _.OBJECT.LOCATION !== SELF, _ => emit("You aren't holding that.\n"));
-perform("DROPPING", _ => true, _ => {
-  emit("DROPPING THE {OBJECT}\n", _);
-  move_object(_.OBJECT, CURRENT_ROOM);
+INSTEAD("DROPPING").WHEN(_ => _.OBJECT.LOCATION !== SELF).THEN(_ => EMIT("I'm not holding that.\n"));
+PERFORM("DROPPING").THEN(_ => {
+  EMIT("DROPPING THE {OBJECT}\n", _);
+  MOVE(_.OBJECT, CURRENT_ROOM);
 });
 
-understand("PUTTING", parse_sequence(parse_keyword("PUT"), parse_object("OBJECT"), parse_relloc("RELATIVE_LOCATION"), parse_object("LOCATION")));
-instead("PUTTING", _ => _.RELATIVE_LOCATION == "IN" && _.LOCATION.CONTAINER != true, "YOU CAN'T PUT THINGS INSIDE THAT\n");
-instead("PUTTING", _ => _.RELATIVE_LOCATION == "IN" && _.LOCATION.OPEN == false, "YOU WOULD HAVE TO OPEN IT FIRST\n");
-instead("PUTTING", _ => _.RELATIVE_LOCATION == "ON" && _.LOCATION.SUPPORTER != true, "YOU CAN'T PUT THINGS ON THAT\n");
-perform("PUTTING", _ => true, _ => {
-  emit("PUTTING THE {OBJECT} {RELATIVE_LOCATION} THE {LOCATION}\n", _);
-  move_object(_.OBJECT, _.LOCATION, _.RELATIVE_LOCATION);
+UNDERSTAND("PUTTING", SEQUENCE(KEYWORD("PUT"), THING("OBJECT"), RELLOC("RELATIVE_LOCATION"), THING("LOCATION")));
+INSTEAD("PUTTING").WHEN(_ => _.OBJECT.LOCATION !== SELF).THEN(_ => EMIT("I'm not holding that.\n"));
+INSTEAD("PUTTING").WHEN(_ => _.RELATIVE_LOCATION == "IN" && _.LOCATION.CONTAINER != true).THEN("I CAN'T PUT THINGS INSIDE THAT\n");
+INSTEAD("PUTTING").WHEN(_ => _.RELATIVE_LOCATION == "IN" && _.LOCATION.OPEN == false).THEN("I WOULD HAVE TO OPEN IT FIRST\n");
+INSTEAD("PUTTING").WHEN(_ => _.RELATIVE_LOCATION == "ON" && _.LOCATION.SUPPORTER != true).THEN("I CAN'T PUT THINGS ON THAT\n");
+PERFORM("PUTTING").THEN(_ => {
+  EMIT("PUTTING THE {OBJECT} {RELATIVE_LOCATION} THE {LOCATION}\n", _);
+  MOVE(_.OBJECT, _.LOCATION, _.RELATIVE_LOCATION);
 });
 
-var UNLOCK_COMMAND = understand("UNLOCKING", parse_sequence(parse_keyword("UNLOCK"), parse_object("OBJECT")));
+var UNLOCK_COMMAND = UNDERSTAND("UNLOCKING", SEQUENCE(KEYWORD("UNLOCK"), THING("OBJECT")));
 
-instead("UNLOCKING", _ => _.OBJECT.LOCKED === undefined, _ => emit("That isn't something that can be locked in the first place.\n"));
-instead("UNLOCKING", _ => _.OBJECT.LOCKED === false, _ => emit("It's already unlocked.\n"));
-perform("UNLOCKING", _ => true, _ => {
-  emit("UNLOCKING [{OBJECT}]\n", _);
+INSTEAD("UNLOCKING").WHEN(_ => _.OBJECT.LOCKED === undefined).THEN(_ => EMIT("That isn't something that can be locked in the first place.\n"));
+INSTEAD("UNLOCKING").WHEN(_ => _.OBJECT.LOCKED === false).THEN(_ => EMIT("It's already unlocked.\n"));
+PERFORM("UNLOCKING").THEN(_ => {
+  EMIT("UNLOCKING [{OBJECT}]\n", _);
   _.OBJECT.LOCKED = false;
 });
 
-var COMMAND_OPEN = understand("OPENING", parse_sequence(parse_keyword("OPEN"), parse_object("OBJECT")));
+var COMMAND_OPEN = UNDERSTAND("OPENING", SEQUENCE(KEYWORD("OPEN"), THING("OBJECT")));
 
-instead("OPENING", (_) => _.OBJECT.OPEN === undefined, (_) => {
-  emit ("You can't open that.\n");
+INSTEAD("OPENING").WHEN(_ => _.OBJECT.OPEN === undefined).THEN(_ => {
+  EMIT("You can't open that.\n");
   _.COMMAND_FAILED = true;
 });
 
-perform("OPENING", _ => _.OBJECT.LOCKED == true, _ => {
-  emit("[FIRST UNLOCKING THE {OBJECT}]\n", _);
-  var unlock_failed = follow_parsed_command(UNLOCK_COMMAND, _);
+PERFORM("OPENING").WHEN(_ => _.OBJECT.LOCKED == true).THEN(_ => {
+  EMIT("[FIRST UNLOCKING THE {OBJECT}]\n", _);
+  var unlock_failed = FOLLOW_PARSED_COMMAND("UNLOCKING", _);
   if (unlock_failed)
     return RULE_RESULT.ABORT;
 });
 
-perform("OPENING", (_) => true, (_) => {
-  emit("OPENING THE {OBJECT}\n", _);
+PERFORM("OPENING").THEN(_ => {
+  EMIT("OPENING THE {OBJECT}\n", _);
   _.OBJECT.OPEN = true;
   if (_.OBJECT.CONTAINER == true)
-    follow_parsed_command(LOOK_INSIDE, _);
+    FOLLOW_PARSED_COMMAND("LOOKING IN", _);
 })
 
-var CLOSE_COMMAND = understand("CLOSING", parse_sequence(parse_keyword("CLOSE"), parse_object("OBJECT")));
+var CLOSE_COMMAND = UNDERSTAND("CLOSING", SEQUENCE(KEYWORD("CLOSE"), THING("OBJECT")));
 
-instead("CLOSING", _ => _.OBJECT.OPEN === undefined, _ => {
-  emit ("That isn't something that can be open or closed\n");
+INSTEAD("CLOSING").WHEN(_ => _.OBJECT.OPEN === undefined).THEN(_ => {
+  EMIT("That isn't something that can be open or closed\n");
   _.COMMAND_FAILED = true;
 });
 
-instead("CLOSING", _ => _.OBJECT.OPEN == false, _ => emit("IT'S ALREADY CLOSED"));
+INSTEAD("CLOSING").WHEN(_ => _.OBJECT.OPEN == false).THEN(_ => EMIT("IT'S ALREADY CLOSED"));
 
-perform("CLOSING", _ => true, _ => {
-  emit("CLOSING THE {OBJECT}\n", _);
+PERFORM("CLOSING").THEN(_ => {
+  EMIT("CLOSING THE {OBJECT}\n", _);
   _.OBJECT.OPEN = false;
 })
 
 
-understand("GOING", parse_sequence(parse_keyword("GO"), parse_direction("DIRECTION")));
-understand("GOING", parse_direction("DIRECTION"));
+UNDERSTAND("GOING", SEQUENCE(KEYWORD("GO"), DIRECTION("DIRECTION")));
+UNDERSTAND("GOING", DIRECTION("DIRECTION"));
 
-instead("GOING", (_) => CURRENT_ROOM.get_link(_.DIRECTION) == null, (_) => { emit("You can't go that way.\n"); });
+INSTEAD("GOING").WHEN(_ => GET_LINK(CURRENT_ROOM, _.DIRECTION) == null).THEN("I can't go that way.\n");
 
-perform("GOING", (_) => {
-  if (CURRENT_ROOM.get_link(_.DIRECTION).DOOR == null) return false;
-  if (CURRENT_ROOM.get_link(_.DIRECTION).DOOR.OPEN == true) return false;
+PERFORM("GOING").WHEN(_ => {
+  if (GET_LINK(CURRENT_ROOM, _.DIRECTION).DOOR == null) return false;
+  if (GET_LINK(CURRENT_ROOM, _.DIRECTION).DOOR.OPEN == true) return false;
   return true;
-},
-  (_) => { 
-    emit("[First opening the {DOOR}]\n", CURRENT_ROOM.get_link(_.DIRECTION));
-    var fake_parse = { OBJECT: CURRENT_ROOM.get_link(_.DIRECTION).DOOR };
-    var open_failed = follow_parsed_command(COMMAND_OPEN, fake_parse);
+}).THEN(_ => { 
+    EMIT("[First opening the {DOOR}]\n", GET_LINK(CURRENT_ROOM, _.DIRECTION));
+    var fake_parse = { OBJECT: GET_LINK(CURRENT_ROOM, _.DIRECTION).DOOR };
+    var open_failed = FOLLOW_PARSED_COMMAND("OPENING", fake_parse);
     if (open_failed)
       return RULE_RESULT.ABORT;
   });
 
-perform("GOING", (_) => true, (_) => {
-  emit("Going " + _.DIRECTION + "\n");
-  CURRENT_ROOM = CURRENT_ROOM.get_link(_.DIRECTION).DESTINATION;
-  follow_command("LOOK");
+PERFORM("GOING").THEN(_ => {
+  EMIT("Going " + _.DIRECTION + "\n");
+  CURRENT_ROOM = GET_LINK(CURRENT_ROOM, _.DIRECTION).DESTINATION;
+  FOLLOW_COMMAND("LOOK");
 });
 
-understand("USING ON", parse_sequence(parse_keyword("USE"), parse_object("TOOL"), parse_keyword("ON"), parse_object("TARGET")));
-understand("USING ON", parse_sequence(parse_keyword("USE"), parse_object("TOOL"), parse_keyword("WITH"), parse_object("TARGET")));
+UNDERSTAND("USING", SEQUENCE(KEYWORD("USE"), THING("OBJECT")));
+INSTEAD("USING").THEN("I DON'T KNOW HOW TO DO THAT.\n").LAST();
 
-instead("USING ON", _ => true, _ => emit("I don't know how to do that.\n")).last();
+UNDERSTAND("USING ON", SEQUENCE(KEYWORD("USE"), THING("TOOL"), KEYWORD("ON"), THING("OBJECT")));
+UNDERSTAND("USING ON", SEQUENCE(KEYWORD("USE"), THING("TOOL"), KEYWORD("WITH"), THING("OBJECT")));
+
+INSTEAD("USING ON").THEN(_ => EMIT("I don't know how to do that.\n")).LAST();
+
+/*
+  TODO:
+*/
