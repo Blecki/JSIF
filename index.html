@@ -19,7 +19,8 @@
             <li>USE [something] ON [something] - Complex object interactions. How does the robot know what to do?? Does it just guess??</li>
           </ul>
         </div>
-        <div>There were other commands but the instructor didn't list them all. Thankfully the robot has the HELP command which lists all the different actions it can perform.</div>        
+        <div>There were other commands but the instructor didn't list them all. Thankfully the robot has the HELP command which lists all the different actions it can perform.</div>   
+        <div><a href="https://github.com/Blecki/JSIF">Game Source on Github</a></div>
         <div style="position:absolute; bottom:10px; right:10px;" onclick="document.getElementById('MANUAL').style.display = 'none';">Close</div>
       </div>
       
@@ -126,6 +127,7 @@
   // This is ultimately just javascript, so, we don't need to jump through hoops just to get some global variables like in Inform7.
   var SHIP_PRESSURIZED = false;
 
+  // Display the current pressure after describing a room.
   PERFORM("LOOKING HERE").WHEN(_ => SHIP_PRESSURIZED == false).THEN("ATMOSPHERIC PRESSURE: 0 bars\n").LAST();
   PERFORM("LOOKING HERE").WHEN(_ => SHIP_PRESSURIZED == true).THEN("ATMOSPHERIC PRESSURE: 1.014 bars\n").LAST();
 
@@ -136,6 +138,34 @@
  *    ║  ║  ║ ║╚═╗║╣  ║   ║║║║╠╦╝║╣   ╠═╝║ ║╔═╝╔═╝║  ║╣ 
  *    ╚═╝╩═╝╚═╝╚═╝╚═╝ ╩   ╚╩╝╩╩╚═╚═╝  ╩  ╚═╝╚═╝╚═╝╩═╝╚═╝
  */
+
+  var SNIPS = new GAMEOBJECT("TIN SNIPS");
+  SNIPS.DESCRIPTION = "SNIPS! For cutting things. Please complete training module 22G-BW9 'the many dangers of SNIPS' before operating this equipment";
+  
+  var KNUT_SACK = new GAMEOBJECT("WIRE KNUTS");
+  KNUT_SACK.NOUNS.push("KNUT");
+  KNUT_SACK.DESCRIPTION = "A SMALL SACK OF BRIGHT ORANGE WIRE KNUTS. USEFUL FOR MAKING WIRES THAT ARE APART TOGETHER INSTEAD";
+
+  var RED_WIRE = new GAMEOBJECT("THIN RED WIRE");
+  RED_WIRE.IS_WIRE = true;
+  RED_WIRE.FIXED = true;
+  RED_WIRE.DESCRIPTION = "A THIN RED WIRE PROTRUDES FROM THE CONTROL PANEL";
+  RED_WIRE.CUT = false;
+
+  var GREEN_WIRE = new GAMEOBJECT("THICK GREEN WIRE");
+  GREEN_WIRE.IS_WIRE = true;
+  GREEN_WIRE.FIXED = true;
+  GREEN_WIRE.DESCRIPTION = "A FAT GREEN WIRE IS BURIED DEEP IN THE CONTROL PANEL";
+  GREEN_WIRE.CUT = true;
+  
+  var YELLOW_WIRE = new GAMEOBJECT("SPIRAL YELLOW WIRE");
+  YELLOW_WIRE.IS_WIRE = true;
+  YELLOW_WIRE.FIXED = true;
+  YELLOW_WIRE.DESCRIPTION = "A SPIRAL OF YELLOW WIRE SNAKES AROUND THE INTERIOR OF THE CONTROL PANEL";
+  YELLOW_WIRE.CUT = false;
+
+  // If a wire is cut, say (CUT) after the name.
+  PERFORM("NAMING").WHEN(_ => _.IS_WIRE === true && _.CUT === true).THEN(_ => EMIT(" (CUT)")).LAST();
 
   // Create a custom 'CUTTING' action. This action exists only to be turned into the USING ON action.
   UNDERSTAND("CUTTING", SEQUENCE(KEYWORD("CUT"), THING("OBJECT")));
@@ -148,14 +178,16 @@
   // This instead rule turns CUT X into USE SNIPS ON X
   INSTEAD("CUTTING").WHEN(_ => SNIPS.LOCATION === SELF).THEN(_ => FOLLOW_PARSED_COMMAND("USING ON", { TOOL: SNIPS, OBJECT: _.OBJECT }));
 
-  // Handle the logic for cutting the red wire.
-  INSTEAD("USING ON").WHEN(_ => _.TOOL === SNIPS && _.OBJECT === RED_WIRE && RED_WIRE.CUT == false).THEN(_ => {
-    RED_WIRE.CUT = true;
-    CLOSET_HATCH.LOCKED = false;
-    EMIT("A few sparks fly as you snip the red wire. The door makes a disturbing clunk.\n");
+  // Handle the logic for cutting a wire
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === SNIPS && _.OBJECT.IS_WIRE === true && _.OBJECT.CUT == false).THEN(_ => {
+    _.OBJECT.CUT = true;
     EMIT("Destruction of postal property has been annotated in your OPF.\n");
+    if (RED_WIRE.CUT === true && GREEN_WIRE.CUT === false) {
+      CLOSET_HATCH.LOCKED = false;
+      EMIT("A few sparks fly as you snip the red wire. The door makes a disturbing clunk.\n");
+    }
   });
-  INSTEAD("USING ON").WHEN(_ => _.TOOL === SNIPS && _.OBJECT === RED_WIRE && RED_WIRE.CUT == true).THEN(_ => {
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === SNIPS && _.OBJECT.IS_WIRE === true && _.OBJECT.CUT == true).THEN(_ => {
     EMIT("You've already cut that, but it's not like you can get written up twice for it.\n");
   });
   
@@ -163,6 +195,34 @@
   UNDERSTAND("USING ON", SEQUENCE(KEYWORD("CUT"), THING("OBJECT"), KEYWORD("WITH"), THING("TOOL")))
     .WHEN(_ => _.TOOL === SNIPS); // A when clause on a command can filter a successful match after the fact.
 
+  // And for the knuts, we get a custom 'connect' action.
+  UNDERSTAND("CONNECTING", SEQUENCE(KEYWORD("CONNECT"), THING("OBJECT")));
+  UNDERSTAND("CONNECTING", SEQUENCE(KEYWORD("JOIN"), THING("OBJECT")));
+  PERFORM("CONNECTING").THEN("I HAVE NO IDEA HOW TO DO THAT\n");
+  INSTEAD("CONNECTING").WHEN(_ => KNUT_SACK.LOCATION !== SELF).THEN("You haven't anything to connect that with.\n");
+  // FYI: Using objects in WHEN and THEN clauses before they are defined works just fine. But they have to be defined before you call 
+  //   any world construction helper functions like MOVE.
+
+  // This instead rule turns CUT X into USE SNIPS ON X
+  INSTEAD("CONNECTING").WHEN(_ => KNUT_SACK.LOCATION === SELF).THEN(_ => FOLLOW_PARSED_COMMAND("USING ON", { TOOL: KNUT_SACK, OBJECT: _.OBJECT }));
+
+  // Handle the logic for connecting a wire
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === KNUT_SACK && _.OBJECT.IS_WIRE === true && _.OBJECT.CUT === true).THEN(_ => {
+    _.OBJECT.CUT = false;
+    EMIT("I HAVE CONNECTED THE {OBJECT}\n", _);
+    if (RED_WIRE.CUT === true && GREEN_WIRE.CUT === false) {
+      CLOSET_HATCH.LOCKED = false;
+      EMIT("CONNECTING THE GREEN WIRE SEEMS TO HAVE DONE IT. The door makes a disturbing clunk.\n");
+    }
+  });
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === KNUT_SACK && _.OBJECT.IS_WIRE === true && _.OBJECT.CUT === false).THEN(_ => {
+    EMIT("THAT WIRE IS ALREADY CONNECTED\n");
+  });
+  
+  UNDERSTAND("USING ON", SEQUENCE(KEYWORD("CONNECT"), THING("OBJECT"), KEYWORD("WITH"), THING("TOOL")))
+    .WHEN(_ => _.TOOL === KNUT_SACK);
+
+  // The rest of the puzzle is really just set-dressing for the actions applied to the wires.
   var CONTROL_PANEL = new GAMEOBJECT("CONTROL PANEL");
   CONTROL_PANEL.FIXED = true;
   CONTROL_PANEL.OPEN = false;
@@ -170,29 +230,14 @@
   CONTROL_PANEL.SUPPORTER = true;
   CONTROL_PANEL.DESCRIPTION = "This is a small metal box afixed to the wall. There's nothing on the outside except scratched paint and what used to be a decal of an eagle.";
   // Details can be looked at but not taken.
-  DETAIL(CONTROL_PANEL, "DEFINITELY NOT AN EAGLE DECAL", "IT'S A WORN AND FADED DECAL OF WHAT MIGHT HAVE ONCE BEEN AN EAGLE BUT FOR LEGAL REASONS IS CLEARLY NOT AN EAGLE NOW");
+  DETAIL(CONTROL_PANEL, "DEFINITELY NOT AN EAGLE DECAL", "IT'S A WORN AND FADED DECAL OF WHAT MIGHT HAVE ONCE BEEN AN EAGLE BUT FOR LEGAL REASONS IS CLEARLY NOT AN EAGLE NOW. THERE'S SOMETHING WRITTEN ON IT IN BLACK SHARPIE, BUT SOME OF THE LETTERS ARE MISSING: YEL O  =  ED HE R NG");
+  MOVE(RED_WIRE, CONTROL_PANEL);
+  MOVE(GREEN_WIRE, CONTROL_PANEL);
+  MOVE(YELLOW_WIRE, CONTROL_PANEL);
 
   var CLOSET = new GAMEOBJECT();
   CLOSET.DESCRIPTION = "I AM in a small storage closet used for storing XA-RC-CCABOTs when they are not in use.";
   MOVE(CONTROL_PANEL, CLOSET);
-
-  var RED_WIRE = new GAMEOBJECT("THIN RED WIRE");
-  RED_WIRE.FIXED = true;
-  RED_WIRE.DESCRIPTION = "A spiral of thin red wire protrudes from the control panel.";
-  RED_WIRE.CUT = false;
-  MOVE(RED_WIRE, CONTROL_PANEL);
-
-  var GREEN_WIRE = new GAMEOBJECT("THICK GREEN WIRE");
-  GREEN_WIRE.FIXED = true;
-  GREEN_WIRE.DESCRIPTION = "A spiral of thin red wire protrudes from the control panel.";
-  GREEN_WIRE.CUT = false;
-  MOVE(GREEN_WIRE, CONTROL_PANEL);
-  
-  var YELLOW_WIRE = new GAMEOBJECT("SPRINGY YELLOW WIRE");
-  YELLOW_WIRE.FIXED = true;
-  YELLOW_WIRE.DESCRIPTION = "A spiral of thin red wire protrudes from the control panel.";
-  YELLOW_WIRE.CUT = false;
-  MOVE(YELLOW_WIRE, CONTROL_PANEL);
 
   var CLOSET_HATCH = new GAMEOBJECT("SECURITY HATCH");
   CLOSET_HATCH.DESCRIPTION = "This is a big heavy door, standard on all SLV models. Large exposed gears open and close it even in pressure differentials as high as 1 atmosphere.";
@@ -212,10 +257,14 @@
   TOOLBOX.CONTAINER = true;
   TOOLBOX.SUPPORTER = true;
   MOVE(TOOLBOX, CLOSET);
-
-  var SNIPS = new GAMEOBJECT("TIN SNIPS");
-  SNIPS.DESCRIPTION = "SNIPS! For cutting things. Please complete training module 22G-BW9 'the many dangers of SNIPS' before operating this equipment";
   MOVE(SNIPS, TOOLBOX);
+  MOVE(KNUT_SACK, TOOLBOX);
+
+  // Clue 
+  var RAGGED_MANUAL = new GAMEOBJECT("RAGGED MANUAL");
+  RAGGED_MANUAL.DESCRIPTION = "THIS RATHER BEAT UP PIECE OF LITERATURE DESCRIBES THE WORKINGS OF A STANDARD SECURITY HATCH. ONE PAGE IS DOG-EARRED, SEEMS TO BE A DIAGRAM OF A BUNCH OF WIRES. BUT IT'S IN BLACK AND WHITE... THERE'S SOMETHING SCRIBBLED BELOW THE DIAGRAM: 5V ON THIN WIRE LOCKS DOOR BUT REMOVING VOLTAGE DOES NOT UNLOCK";
+  MOVE(RAGGED_MANUAL, TOOLBOX);
+  UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("READ"), THING("OBJECT")));
 
   var FIRE_EXSTINQUISHER = new GAMEOBJECT("FIRE EXTINQUISHER");
   FIRE_EXSTINQUISHER.DESCRIPTION = "THIS IS A CLASSIC RED CANISTER. NOZZLE, WARNING LABELS, LAST INSPECTED TWENTY YEARS AGO - THE USUAL";
@@ -271,7 +320,6 @@
   var space = new GAMEOBJECT();
   space.DESCRIPTION = "I AM IN SPACE, JUST BEHIND THE SHIP. THE SHIP ITSELF BLOCKS MY VIEW OF ANYTHING INTERESTING LIKE WHAT THE PILOT HIT, BUT THERE IS A PLUME OF AIR LEAKING FROM THE VENTRAL SIDE.";
   INSTEAD("GOING").WHEN(_ => CURRENT_ROOM === space && _.DIRECTION != "FORE").THEN(_ => EMIT("WITHOUT WORKING THRUSTERS, I CAN'T SEE ANYWAY TO GO THAT WAY."));
-
 
   LINK(CARGO_BAY, "AFT", space, CARGO_DOOR);
   LINK(space, "FORE", CARGO_BAY, CARGO_DOOR);
