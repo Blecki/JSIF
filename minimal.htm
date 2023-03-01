@@ -1,0 +1,104 @@
+<head>
+  <link rel="stylesheet" type="text/css" href="style.css" />
+  <script src="jsif.js"></script>
+</head>
+
+<div class="crt body row parent"> 
+  <div class="flex-content">
+    <div class="scrollable-content-wrapper">
+      <div class="terminal scrollable-content" id="terminal"></div>
+    </div>
+  </div>
+  <div class="input_row" style="width: 100%;">
+    <div style="width: 100%; position:relative;">
+      <span style="position:absolute; left:0;">></span>
+      <span style="position:absolute; left: 20px; right:240px;">
+          <input style="width: 100%;" class="input" type="text" id="command"></input>
+      </span>
+      <span style="position:absolute; right:200;">
+          <button class="button" type="button" onclick="INPUT()" id="parse_button">PARSE</button>
+      </span>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  var INPUT_ENABLED = true;
+  var CURRENT_DIV = null;
+
+  function START_NEW_LINE() {
+    CURRENT_DIV = document.createElement('div');
+    document.getElementById('terminal').appendChild(CURRENT_DIV);
+    CURRENT_DIV.scrollIntoView();
+  }
+
+  const DELAY = ms => new Promise(res => setTimeout(res, ms));
+
+  async function CLEAR_EMISSION() {
+    var eQueue = GET_EMISSION_QUEUE();
+    for (var i = 0; i < eQueue.length; i += 1) {
+      if (eQueue.charAt(i) == '\n')
+        START_NEW_LINE();
+      else
+        CURRENT_DIV.innerText += eQueue.charAt(i);
+      CURRENT_DIV.scrollIntoView();
+      await DELAY(10);
+    }
+    CLEAR_EMISSION_QUEUE();
+  }
+  
+  // Handle player input.
+  async function INPUT() {
+    if (INPUT_ENABLED) {
+      INPUT_ENABLED = false; // Disable input until command is entirely done executing.
+
+      var commandInput = document.getElementById("command");
+      var command = commandInput.value.toUpperCase();
+      commandInput.value = "";
+      commandInput.focus();
+
+      // Echo the player's command to the output.
+      EMIT("\n \n");
+      EMIT("> " + command + "\n");
+      await CLEAR_EMISSION();
+
+      // Actually send the command to the game engine.
+      FOLLOW_COMMAND(command);
+      await CLEAR_EMISSION();
+
+      INPUT_ENABLED = true; // Re-enable input.
+    }
+  }
+
+  // Make pressing enter in the command input the same as clicking the parse button.
+  document.getElementById("command").addEventListener("keyup", function(event) {
+    if (event.keyCode === 13) {
+        event.preventDefault();
+        document.getElementById("parse_button").click();
+    }
+  });
+
+
+  var MYROOM = new GAMEOBJECT();
+  MYROOM.DESCRIPTION = "THIS IS A ROOM.";
+
+  // Start the game in the correct room.
+  CURRENT_ROOM = MYROOM;
+  SELF.DESCRIPTION = "THIS IS ME";
+
+  /*
+    Plays the opening sequence.
+  */
+  async function STARTUP() {
+    START_NEW_LINE();
+    START_GAME();
+    INPUT_ENABLED = false;
+    EMIT("[Type 'LOOK' to examine your suroundings.]\n");
+    document.getElementById("command").focus();
+    await CLEAR_EMISSION();
+    INPUT_ENABLED = true;
+  }
+
+  STARTUP();
+</script>
