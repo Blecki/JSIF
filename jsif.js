@@ -296,6 +296,10 @@ function LINK(object, direction, destination, door) {
   });
 }
 
+function CLEAR_LINKS(object) {
+  object.LINKS = [];
+}
+
 /*
   Look up a LINK in the specified direction.
 */
@@ -326,6 +330,7 @@ function DETAIL(object, name, description) {
   var detail = new GAMEOBJECT(name);
   detail.DESCRIPTION = description;
   MOVE(detail, object, "DETAIL");
+  return detail;
 }
 
 /*
@@ -887,9 +892,10 @@ PERFORM("LOOKING HERE").THEN(_ => {
   EMIT("## SCANNING LOCATION.....\n");
   CONSIDER("DESCRIBING", CURRENT_ROOM);
   EMIT("\n");
-  if (CURRENT_ROOM.CONTENTS.length > 0) {
+  var items_inside = GET_CONTENTS(CURRENT_ROOM, "IN");
+  if (items_inside.length > 0) {
     EMIT("STUFF HERE:\n");
-    for(var item of CURRENT_ROOM.CONTENTS) {
+    for(var item of items_inside) {
       EMIT("*  {ITEM}\n", {ITEM: item});
     }
   }
@@ -974,6 +980,7 @@ PERFORM("LISTING INVENTORY").THEN(_ => {
 
 UNDERSTAND("PUSHING", SEQUENCE(KEYWORD("PUSH"), THING("OBJECT")));
 UNDERSTAND("PUSHING", SEQUENCE(KEYWORD("MOVE"), THING("OBJECT")));
+UNDERSTAND("PUSHING", SEQUENCE(KEYWORD("PRESS"), THING("OBJECT")));
 INSTEAD("PUSHING").THEN(_ => EMIT("Doesn't seem to do anything\n"));
 
 UNDERSTAND("TAKING", SEQUENCE(KEYWORD("GET"), THING("OBJECT")));
