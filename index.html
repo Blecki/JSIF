@@ -80,10 +80,7 @@
     CLEAR_EMISSION_QUEUE();
   }
   
-  /*
-    Handle player input.
-  */
-
+  // Handle player input.
   async function INPUT() {
     if (INPUT_ENABLED) {
       INPUT_ENABLED = false; // Disable input until command is entirely done executing.
@@ -126,12 +123,19 @@
 
   // This is ultimately just javascript, so, we don't need to jump through hoops just to get some global variables like in Inform7.
   var SHIP_PRESSURIZED = false;
+  var ATMOSPHERE_CONTROL_ACTIVE = false;
+  var FOUND_GASH = false;
 
   // Display the current pressure after describing a room.
-  PERFORM("LOOKING HERE").WHEN(_ => SHIP_PRESSURIZED == false).THEN("ATMOSPHERIC PRESSURE: 0 bars\n").LAST();
-  PERFORM("LOOKING HERE").WHEN(_ => SHIP_PRESSURIZED == true).THEN("ATMOSPHERIC PRESSURE: 1.014 bars\n").LAST();
+  PERFORM("LOOKING HERE").WHEN(_ => CURRENT_ROOM !== SPACE && SHIP_PRESSURIZED == false).THEN("ATMOSPHERIC PRESSURE: 0 bars\n").LAST();
+  PERFORM("LOOKING HERE").WHEN(_ => CURRENT_ROOM !== SPACE && SHIP_PRESSURIZED == true).THEN("ATMOSPHERIC PRESSURE: 1.014 bars\n").LAST();
 
-
+  function CHECK_ATMOSPHERE() {
+    if (ATMOSPHERE_CONTROL_ACTIVE == true && CARGO_DOOR.OPEN === false && GAPING_GASH.SEALED === true)
+      SHIP_PRESSURIZED = true;
+    else
+      SHIP_PRESSURIZED = false;
+  }
 
 /***
  *    ╔═╗╦  ╔═╗╔═╗╔═╗╔╦╗  ╦ ╦╦╦═╗╔═╗  ╔═╗╦ ╦╔═╗╔═╗╦  ╔═╗
@@ -266,23 +270,6 @@
   MOVE(RAGGED_MANUAL, TOOLBOX);
   UNDERSTAND("LOOKING AT", SEQUENCE(KEYWORD("READ"), THING("OBJECT")));
 
-  var FIRE_EXSTINQUISHER = new GAMEOBJECT("FIRE EXTINQUISHER");
-  FIRE_EXSTINQUISHER.DESCRIPTION = "THIS IS A CLASSIC RED CANISTER. NOZZLE, WARNING LABELS, LAST INSPECTED TWENTY YEARS AGO - THE USUAL";
-  MOVE(FIRE_EXSTINQUISHER, CLOSET);
-
-  // I just want to make sure the player always has this in their inventory when they use it; that way they can't accidentally leave it
-  // behind when they use it in the space puzzle.
-  INSTEAD("USING").WHEN(_ => _.OBJECT === FIRE_EXSTINQUISHER && FIRE_EXSTINQUISHER.LOCATION !== SELF).THEN(_ => {
-    EMIT("[FIRST TAKING {OBJECT}]\n", _);
-    if (FOLLOW_PARSED_COMMAND("TAKING", _))
-      return RULE_RESULT.ABORT;
-    // Try command again.
-    FOLLOW_PARSED_COMMAND("USING", _);
-  });
-  
-  // Gross.
-  INSTEAD("USING").WHEN(_ => _.OBJECT === FIRE_EXSTINQUISHER).THEN("I SPRAYED SOME FOAMY WHITE GOO AGAINST THE WALL - I DON'T THINK IT HELPED\n");
-  
 /***
  *    ╔═╗╔═╗╦═╗╔═╗╔═╗  ╔╗ ╔═╗╦ ╦
  *    ║  ╠═╣╠╦╝║ ╦║ ║  ╠╩╗╠═╣╚╦╝
@@ -306,10 +293,11 @@
   CARGO_DOOR.NOUNS = ["CARGO", "DOOR"];
   CARGO_DOOR.DESCRIPTION = "A massive door of corrugated steel. It rolls up into the ceiling when opened but somehow still seals tight when closed.";
   CARGO_DOOR.OPEN = false;
-  INSTEAD("OPENING").WHEN(_ => _.OBJECT === CARGO_DOOR && SHIP_PRESSURIZED == true).THEN(_ => {
-    EMIT("There's nothing but space on the other side of that door. If I open it, ALL THE AIR WILL GET OUT\n");
-    _.COMMAND_FAILED = true;
-  });
+
+  // disallow opening door when pilot door is open and vice versa - it lets the air out
+  INSTEAD("OPENING").WHEN(_ => _.OBJECT === CARGO_DOOR && cabin_hatch.OPEN === true).THEN("THAT WOULD SPACE THE PILOT MAN. I CAN'T LET YOU DO THAT\n");
+  PERFORM("OPENING").WHEN(_ => _.OBJECT === CARGO_DOOR).THEN(_ => CHECK_ATMOSPHERE());
+  PERFORM("CLOSING").WHEN(_ => _.OBJECT === CARGO_DOOR).THEN(_ => CHECK_ATMOSPHERE());
 
 /***
  *    ╔═╗╔═╗╔═╗╔═╗╔═╗
@@ -317,12 +305,127 @@
  *    ╚═╝╩  ╩ ╩╚═╝╚═╝
  */
 
-  var space = new GAMEOBJECT();
-  space.DESCRIPTION = "I AM IN SPACE, JUST BEHIND THE SHIP. THE SHIP ITSELF BLOCKS MY VIEW OF ANYTHING INTERESTING LIKE WHAT THE PILOT HIT, BUT THERE IS A PLUME OF AIR LEAKING FROM THE VENTRAL SIDE.";
-  INSTEAD("GOING").WHEN(_ => CURRENT_ROOM === space && _.DIRECTION != "FORE").THEN(_ => EMIT("WITHOUT WORKING THRUSTERS, I CAN'T SEE ANYWAY TO GO THAT WAY."));
+  /*
+    The basic idea of this puzzle is that the player must use the fire extinquisher to move around. But I don't want them to just
+    be able to go any direction while they have the extinquisher; they have to point it a direction and then when they use it they
+    go the opposite. To do this I need a custom version of the going action - but everything happens in the same room regardless.
+  */
 
-  LINK(CARGO_BAY, "AFT", space, CARGO_DOOR);
-  LINK(space, "FORE", CARGO_BAY, CARGO_DOOR);
+  // Let's make the fire extinquisher first.
+  var FIRE_EXTINQUISHER = new GAMEOBJECT("FIRE EXTINQUISHER");
+  FIRE_EXTINQUISHER.DESCRIPTION = "THIS IS A CLASSIC RED CANISTER. NOZZLE, WARNING LABELS, LAST INSPECTED TWENTY YEARS AGO - THE USUAL. THE NOZZLE IS VERY STIFF, I COULD POINT IT IN DIFFERENT DIRECTIONS";
+  FIRE_EXTINQUISHER.DIRECTION = "FORE";
+
+  // Display the direction the fire extinquisher is pointed after naming it.
+  PERFORM("NAMING").WHEN(_ => _ === FIRE_EXTINQUISHER).THEN(_ => EMIT(" (POINTED " + FIRE_EXTINQUISHER.DIRECTION + ")")).LAST();
+
+  MOVE(FIRE_EXTINQUISHER, CARGO_BAY); // TODO: Move back to the closet when done testing!
+
+  // I just want to make sure the player always has this in their inventory when they use it; that way they can't accidentally leave it
+  // behind when they use it in the space puzzle.
+  INSTEAD("USING").WHEN(_ => _.OBJECT === FIRE_EXTINQUISHER && FIRE_EXTINQUISHER.LOCATION !== SELF).THEN(_ => {
+    EMIT("[FIRST TAKING {OBJECT}]\n", _);
+    if (FOLLOW_PARSED_COMMAND("TAKING", _))
+      return RULE_RESULT.ABORT;
+    // Try command again.
+    FOLLOW_PARSED_COMMAND("USING", _);
+  });
+  
+  // Gross. It's not really good for anything if we aren't in space.
+  INSTEAD("USING").WHEN(_ => _.OBJECT === FIRE_EXTINQUISHER && CURRENT_ROOM !== SPACE).THEN("I SPRAYED SOME FOAMY WHITE SLIME AGAINST THE WALL - I DON'T THINK IT HELPED\n");
+
+  var HOT_GLU_GUN = new GAMEOBJECT("HOT GLU GUN");
+  HOT_GLU_GUN.DESCRIPTION = "THIS GUN FIRES VERY ATTRACTIVE GLU; IT IS SO ATTRACTIVE THAT IT CAN BE USED TO SEAL GAPING GASHES";
+  UNDERSTAND("USING ON", SEQUENCE(KEYWORD("FIRE"), THING("TOOL"), KEYWORD("AT"), THING("OBJECT"))).WHEN(_ => _.TOOL === HOT_GLU_GUN);
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === HOT_GLU_GUN).THEN(_ => EMIT("I DON'T THINK MAKING THE {OBJECT} STICKY WILL IMPROVE THINGS\n", _));
+  INSTEAD("USING").WHEN(_ => _.OBJECT === HOT_GLU_GUN).THEN("WELL, THAT'S A MESS. BUT NOT HELPFUL.\n");
+
+  var GAPING_GASH = new GAMEOBJECT("GAPING GASH");
+  GAPING_GASH.DESCRIPTION = "THERE IS A BIG TEAR IN THE SIDE OF THE SHIP. PROBABLY HOW THE AIR GOT OUT";
+  GAPING_GASH.SEALED = false;
+  PERFORM("DESCRIBING").WHEN(_ => _ === GAPING_GASH && GAPING_GASH.SEALED === false).THEN("IT'S WIDE OPEN AND STILL LEAKING.\n");
+  PERFORM("DESCRIBING").WHEN(_ => _ === GAPING_GASH && GAPING_GASH.SEALED === true).THEN("IT'S BEEN PLUGGED UP WITH HOT GLU.\n");
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === HOT_GLU_GUN && _.OBJECT === GAPING_GASH).THEN(_ => {
+    EMIT("I'll JUST GO AHEAD AND FILL THIS GASH UP WITH GLU. SEEMS TO BE WORKING WELL.\n");
+    GAPING_GASH.SEALED = true;
+    CHECK_ATMOSPHERE();
+  }).FIRST();
+  INSTEAD("TAKING").WHEN(_ => _.OBJECT === GAPING_GASH).THEN("NOT SURE HOW YOU EXPECT ME TO TAKE SOMETHING THAT IS LITERALLY THE LACK OF SOMETHING...\n");
+  
+  var SPACE_COORDINATE_X = 0;
+  var SPACE_COORDINATE_Y = 0;
+  var SPACE_COORDINATE_Z = 0;
+
+  function AT_AIRLOCK() {
+    return SPACE_COORDINATE_X == 0 && SPACE_COORDINATE_Y == 0 && SPACE_COORDINATE_Z == 0;
+  }
+
+  function AT_GASH() {
+    return SPACE_COORDINATE_X == 1 && SPACE_COORDINATE_Y == 3 && SPACE_COORDINATE_Z == 2;
+  }
+
+  function AT_FEDEX() {
+    return SPACE_COORDINATE_X == -1 && SPACE_COORDINATE_Y == -1 && SPACE_COORDINATE_Z == -1;
+  }
+
+  // Dynamically change the contents of SPACE depending on the player's location.
+  function MOVE_IN_SPACE(X, Y, Z) {
+    EMIT("THE FIRE EXTINQUISHER PROVIDES THRUST\n")
+    SPACE_COORDINATE_X += X;
+    SPACE_COORDINATE_Y += Y;
+    SPACE_COORDINATE_Z += Z;
+
+    CLEAR_LINKS(SPACE);
+    if (AT_AIRLOCK())
+      LINK(SPACE, "FORE", CARGO_BAY, CARGO_DOOR);
+    if (AT_FEDEX())
+      LINK(SPACE, "DOWN", FEDEX);
+
+    SPACE.CONTENTS = [];
+    if (AT_GASH())
+      MOVE(GAPING_GASH, SPACE);
+  }
+
+  PERFORM("LOOKING HERE").WHEN(_ => CURRENT_ROOM === SPACE).THEN(_ => {
+    EMIT("SPACE COORDINATES [X: " + SPACE_COORDINATE_X + ", Y: " + SPACE_COORDINATE_Y + ", Z: " + SPACE_COORDINATE_Z + "]\n");
+    EMIT("AIRLOCK LOCATION  [X: 0, Y: 0, Z: 0]\n");
+    if (FOUND_GASH && GAPING_GASH.SEALED === false)
+      EMIT("HULL BREACH       [X: 1, Y: 3, Z: 2]\n");
+  }).LAST();
+
+  var SPACE = new GAMEOBJECT();
+  SPACE.DESCRIPTION = "I AM IN SPACE";
+
+  INSTEAD("GOING")
+    .WHEN(_ => CURRENT_ROOM === SPACE && (_.DIRECTION != "FORE" || !AT_AIRLOCK()))
+    .THEN(_ => EMIT("OUT HERE IN SPACE, I NEED SOME WAY TO PROVIDE THRUST IF I WANT TO GET ANYWHERE"))
+    .FIRST();
+
+  LINK(CARGO_BAY, "AFT", SPACE, CARGO_DOOR);
+  LINK(SPACE, "FORE", CARGO_BAY, CARGO_DOOR);
+
+  INSTEAD("USING").WHEN(_ => _.OBJECT === FIRE_EXTINQUISHER && CURRENT_ROOM === SPACE).THEN(_ => {
+    if (FIRE_EXTINQUISHER.DIRECTION == "FORE")
+      MOVE_IN_SPACE(0, -1, 0);
+    if (FIRE_EXTINQUISHER.DIRECTION == "AFT")
+      MOVE_IN_SPACE(0, 1, 0);
+    if (FIRE_EXTINQUISHER.DIRECTION == "UP")
+      MOVE_IN_SPACE(0, 0, -1);
+    if (FIRE_EXTINQUISHER.DIRECTION == "DOWN")
+      MOVE_IN_SPACE(0, 0, 1);
+    if (FIRE_EXTINQUISHER.DIRECTION == "PORT")
+      MOVE_IN_SPACE(1, 0, 0);
+    if (FIRE_EXTINQUISHER.DIRECTION == "STARBOARD")
+      MOVE_IN_SPACE(-1, 0, 0);
+    FOLLOW_COMMAND("LOOK");
+  });
+
+  UNDERSTAND("POINTING", SEQUENCE(KEYWORD("POINT"), THING("OBJECT"), DIRECTION("DIRECTION")));
+  INSTEAD("POINTING").WHEN(_ => _.OBJECT !== FIRE_EXTINQUISHER).THEN("OKAY, BUT I DON'T SEE THE POINT\n");
+  PERFORM("POINTING").WHEN(_ => _.OBJECT === FIRE_EXTINQUISHER).THEN(_ => {
+    FIRE_EXTINQUISHER.DIRECTION = _.DIRECTION;
+    EMIT("FIRE EXTINQUISHER IS NOW POINTED " + _.DIRECTION + "\n");
+  });
 
 /***
  *    ╔═╗╦ ╦╦╔╗╔╔═╗  ╦═╗╔═╗╔═╗╔╦╗
@@ -353,7 +456,7 @@
   INSTEAD("PUSHING").WHEN(_ => _.OBJECT === COMPUTER_CONSOLE && COMPUTER_CONSOLE.MOVED == false).THEN(_ => {
     EMIT("YOU PUSH THE CONSOLE ASIDE, REVEALING SOME KIND OF MAINTENANCE DOOR");
     COMPUTER_CONSOLE.MOVED = true;
-    LINK(SWING_ROOM, "PORT", access_tunnel, maintenance_door);
+    LINK(SWING_ROOM, "PORT", ACCESS_TUNNEL, MAINTENANCE_DOOR);
   }).FIRST();
   PERFORM("DESCRIBING").WHEN(_ => _ === COMPUTER_CONSOLE && COMPUTER_CONSOLE.MOVED == false).THEN(_ => EMIT("THERE SEEMS TO BE SOME KIND OF GAP BEHIND IT\n"));
 
@@ -413,7 +516,7 @@
   viewscreen.NOUNS.push("VIEW");
   viewscreen.NOUNS.push("SCREEN");
   viewscreen.FIXED = true;
-  viewscreen.DESCRIPTION = "THROUGH THE FORWARD VIEWSCREEN YOU CAN SEE VERY CLEARLY THE OBJECT THE PILOT STRUCK - IT IS A LARGE SPACESHIP PAINTED IN GARISH ORANGE AND PURPLE WITH \"FEDEX\" ON THE SIDE.";
+  viewscreen.DESCRIPTION = "THROUGH THE FORWARD VIEWSCREEN YOU CAN SEE VERY CLEARLY THE OBJECT THE PILOT STRUCK - IT IS A LARGE SPACESHIP PAINTED IN GARISH ORANGE AND PURPLE WITH \"FEDEX\" ON THE SIDE. I CAN SEE AN OPEN HATCH ON THE SIDE OF THE OTHER SHIP, LOOKS LIKE IT MIGHT BE PRETTY CLOSE TO OUR CARGO DOOR IF I CAN REACH IT";
   MOVE(viewscreen, pilot_cabin);
 
   var battery = new GAMEOBJECT("BATTERY");
@@ -453,9 +556,221 @@
     else
       EMIT("THE CONSOLE BEEPS FURIOUSLY. THAT IS NOT THE CORRECT PASSWORD\n");
   });
+
+  var LOCKER = new GAMEOBJECT("LOCKER");
+  LOCKER.DESCRIPTION = "A NARROW METAL LOCKER. WHAT IS THE PILOT LOCKING UP? HE'S THE ONLY EMPLOYEE ON BOARD";
+  LOCKER.FIXED = true;
+  LOCKER.CONTAINER = true;
+  LOCKER.OPEN = false;
+  LOCKER.LOCKED = true;
+  MOVE(LOCKER, SWING_ROOM);
+
+/***
+ *    ╦ ╦╔═╗╔═╗╔╦╗
+ *    ╠═╣║╣ ╠═╣ ║║
+ *    ╩ ╩╚═╝╩ ╩═╩╝
+ */
+
+  var HEAD = new GAMEOBJECT();
+  HEAD.DESCRIPTION = "I CAN BARELY FIT IN THIS TINY CRAMPED RESTROOM. THIS IS WORSE THAN BEING ON AN AIRPLANE. I THINK I AM LUCKY THAT I DO NOT HAVE BIOLOGICAL PROCESSES";
+
+  LINK(SWING_ROOM, "STARBOARD", HEAD);
+  LINK(HEAD, "PORT", SWING_ROOM);
+
+  MOVE(HOT_GLU_GUN, HEAD);
+
+  var CABINET = new GAMEOBJECT("CABINET");
+  CABINET.DESCRIPTION = "IT'S JUST A SIMPLE CABINET UNDERNEATH THE SINK";
+  CABINET.OPEN = false;
+  CABINET.FIXED = true;
+  CABINET.CONTAINER = true;
+
+  MOVE(CABINET, HEAD);
+
+  var URINAL = new GAMEOBJECT("URINAL");
+  URINAL.FIXED = true;
+  URINAL.IS_FLUID_CONTAINER = true;
+  MOVE(URINAL, HEAD);
+
+  var SINK = new GAMEOBJECT("SINK");
+  SINK.IS_FLUID_CONTAINER = true;
+  SINK.FIXED = true;
+  SINK.SUPPORTER = true;
+  MOVE(SINK, HEAD);
   
+  var BADGE = new GAMEOBJECT("EMPLOYEE BADGE");
+  BADGE.DESCRIPTION = "TOLIP Q. CARRIER. IT'S GOT HIS PICTURE ON IT TOO. PRETTY FADED, EXCEPT FOR THE GREEN EYES";
+  MOVE(BADGE, SINK, "ON");
+
+
+/***
+ *    ╔═╗╔═╗╔╦╗╔═╗═╗ ╦
+ *    ╠╣ ║╣  ║║║╣ ╔╩╦╝
+ *    ╚  ╚═╝═╩╝╚═╝╩ ╚═
+ */
+
+  var FEDEX = new GAMEOBJECT();
+
+  // Fedex puzzle: Feed instructions to alien computer to power the ship's engines. When successful, automatically eject player into space.
+
+  /***
+ *    ╔═╗╔╦╗╔╦╗╔═╗╔═╗╔═╗╦ ╦╔═╗╦═╗╔═╗  ╔═╗╔═╗╔╗╔╔╦╗╦═╗╔═╗╦  
+ *    ╠═╣ ║ ║║║║ ║╚═╗╠═╝╠═╣║╣ ╠╦╝║╣   ║  ║ ║║║║ ║ ╠╦╝║ ║║  
+ *    ╩ ╩ ╩ ╩ ╩╚═╝╚═╝╩  ╩ ╩╚═╝╩╚═╚═╝  ╚═╝╚═╝╝╚╝ ╩ ╩╚═╚═╝╩═╝
+ */
+
+  var ACCESS_TUNNEL = new GAMEOBJECT();
+  ACCESS_TUNNEL.DESCRIPTION = "THIS NARROW TUNNEL SNAKES BEHIND THE SWING ROOM. I CAN BARELY FIT, BUT THE WINDOW IS NICE";
+  var WINDOW_DETAIL = DETAIL(ACCESS_TUNNEL, "WINDOW", "I CAN SEE PART OF THE SHIP THROUGH THIS WINDOW. AND ALSO I CAN SEE A MASSIVE GASH. THAT MUST BE WHERE ALL THE AIR WENT");
+  PERFORM("LOOKING AT").WHEN(_ => _.OBJECT === WINDOW_DETAIL).THEN(_ => { 
+    if (FOUND_GASH === false)
+      EMIT("MAKING A NOTE OF THE LOCATION OF THAT GASH\n");
+    FOUND_GASH = true; 
+  });
+
+  var MAINTENANCE_DOOR = new GAMEOBJECT("MAINTENANCE DOOR");
+  LINK(ACCESS_TUNNEL, "STARBOARD", SWING_ROOM, MAINTENANCE_DOOR);
+  MAINTENANCE_DOOR.FIXED = true;
+  MAINTENANCE_DOOR.OPEN = false;
+
+  var ATMOSPHERE_CONTROL = new GAMEOBJECT();
+  ATMOSPHERE_CONTROL.DESCRIPTION = "I AM IN A CRAMPED ROOM FULL OF CLUNKY EQUIPMENT. I THINK THIS IS WHERE THE AIR IS PROCESSED, AMONG OTHER THINGS";
+  LINK(ACCESS_TUNNEL, "AFT", ATMOSPHERE_CONTROL);
+  LINK(ATMOSPHERE_CONTROL, "FORE", ACCESS_TUNNEL);
+
+  // To activate atmosphere control, the player must fool the retinal scanner. The scanner is not very sophisticated and only actually checks eye color.
+  // To duplicate the eye color they need to mix blue and yellow fluids to make green.
+
+  var BOTTLE = new GAMEOBJECT("BOTTLE");
+  BOTTLE.COLOR = "PURPLE";
+  BOTTLE.IS_FLUID_CONTAINER = true;
+  BOTTLE.IS_FLUID = true;
+  PERFORM("NAMING").WHEN(_ => _ === BOTTLE).THEN(_ => EMIT(BOTTLE.COLOR + " ")).FIRST();
+
+ 
+  
+  var WINDOW_CLEANER = new GAMEOBJECT("WINDOW CLEANER");
+  WINDOW_CLEANER.IS_FLUID = true;
+  WINDOW_CLEANER.COLOR = "BLUE";
+  var LEMONADE = new GAMEOBJECT("GLASS OF LEMONADE");
+  LEMONADE.IS_FLUID = true;
+  LEMONADE.COLOR = "YELLOW";
+  var CODE_RED = new GAMEOBJECT("MOUNTAIN DEW CODE RED");
+  CODE_RED.IS_FLUID = true;
+  CODE_RED.COLOR = "RED";
+
+  MOVE(BOTTLE, CABINET);
+  MOVE(WINDOW_CLEANER, CABINET);
+  MOVE(LEMONADE, COMPUTER_CONSOLE, "ON");
+  MOVE(CODE_RED, LOCKER);
+
+  function combine_colors(A, B) {
+    if (A == "EMPTY")
+      return B;
+    if (B == "EMPTY")
+      return A;
+    if (A == B) return A;
+
+    if (A != "BLUE" && A != "YELLOW" && A != "RED") return "MUDDY"; // Mixing non-primaries always goes wrong.
+    if (B != "BLUE" && B != "YELLOW" && B != "RED") return "MUDDY"; // Mixing non-primaries always goes wrong.
+    
+    if (A == "BLUE" && B == "YELLOW") return "GREEN";
+    if (A == "BLUE" && B == "RED") return "PURPLE";
+    if (A == "YELLOW" && B == "BLUE") return "GREEN";
+    if (A == "YELLOW" && B == "RED") return "ORANGE";
+    if (A == "RED" && B == "BLUE") return "PURPLE";
+    if (A == "RED" && B == "YELLOW") return "ORANGE";
+
+    return "ERROR";
+  }
+
+  // Some actions involving the liquids:
+
+  UNDERSTAND("POURING", SEQUENCE(KEYWORD("POUR"), THING("SOURCE"), KEYWORD("INTO"), THING("DESTINATION")));
+
+  INSTEAD("POURING").WHEN(_ => _.DESTINATION.IS_FLUID_CONTAINER !== true || _.SOURCE.IS_FLUID !== true).THEN("I DON'T THINK SO\n");
+  INSTEAD("POURING").WHEN(_ => _.DESTINATION === SINK && _.SOURCE !== BOTTLE).THEN("I MIGHT NEED THAT LATER\n");
+
+  PERFORM("POURING").WHEN(_ => _.DESTINATION === BOTTLE).THEN(_ => {
+    EMIT("POURING SOME OF {SOURCE} INTO {DESTINATION}. ", _);
+    BOTTLE.COLOR = combine_colors(BOTTLE.COLOR, _.SOURCE.COLOR);
+    EMIT("NOW I'VE GOT A {DESTINATION}\n", _);
+  });
+
+  PERFORM("POURING").WHEN(_ => _.DESTINATION === SINK && _.SOURCE === BOTTLE).THEN(_ => {
+    EMIT("EMPTYING THE BOTTLE INTO THE SINK\n");
+    BOTTLE.COLOR = "EMPTY";
+  });
+
+  PERFORM("POURING").WHEN(_ => _.DESTINATION === URINAL && _.SOURCE === BOTTLE).THEN(_ => {
+    EMIT("EMPTYING THE BOTTLE INTO THE URINAL\n");
+    BOTTLE.COLOR = "EMPTY";
+  });
+
+  var SCAN_PASSED = false;
+
+  var BIG_GREEN_BUTTON = new GAMEOBJECT("BIG GREEN BUTTON");
+  BIG_GREEN_BUTTON.DESCRIPTION = "IT'S BIG, IT'S GREEN, AND I'M PRETTY SURE I COULD PRESS IT.";
+  BIG_GREEN_BUTTON.FIXED = true;
+  INSTEAD("PUSHING").WHEN(_ => _.OBJECT === BIG_GREEN_BUTTON).THEN(_ => {
+    if (SCAN_PASSED) {
+      if (ATMOSPHERE_CONTROL_ACTIVE)
+        EMIT("PUSHING IT AGAIN DOESN'T SEEM TO DO ANYTHING\n");
+      else {
+        EMIT("THE ATMOSPHERE GENERATOR CHUGS TO LIFE!\n");
+        ATMOSPHERE_CONTROL_ACTIVE = true;
+        CHECK_ATMOSPHERE();
+      }
+    }
+    else {
+      EMIT("DID YOU HEAR THAT? OH, I GUESS YOU WOULDN'T. A VOICE JUST SAID I NEED AN ACTIVE EMPLOYEE RETINAL SCAN TO START THIS THING\n");
+    }
+  }).FIRST();
+
+  var RETINAL_SCANNER = new GAMEOBJECT("RETINAL SCANNER");
+  RETINAL_SCANNER.FIXED = true;
+  RETINAL_SCANNER.DESCRIPTION = "THIS IS ACTUALLY PRETTY OLD TECH, I BET IT COULD BE FOOLED PRETTY EASILY";
+  INSTEAD("USING").WHEN(_ => _.OBJECT === RETINAL_SCANNER).THEN("I DO NOT HAVE RETINAS");
+  INSTEAD("USING ON").WHEN(_ => _.TOOL === BOTTLE && _.OBJECT === RETINAL_SCANNER).THEN(_ => {
+    if (ATMOSPHERE_CONTROL_ACTIVE) {
+      EMIT("IT'S ALREADY BEEN RESTARTED\n");
+      return;
+    }
+
+    if (BOTTLE.COLOR == "GREEN") {
+      EMIT("IT BEEPS, BUT NOT ANGRILY\n");
+      SCAN_PASSED = true;
+    }
+    else
+      EMIT("IT'S JUST BEEPING ANGRILY\n");
+  });
+
+  var ATMOSPHERE_GENERATOR = new GAMEOBJECT("ATMOSPHERE GENERATOR");
+  ATMOSPHERE_GENERATOR.DESCRIPTION = "A BIG CLUNKY MACHINE THAT DOES EXACTLY WHAT YOU EXPECT";
+  ATMOSPHERE_GENERATOR.SUPPORTER = true;
+  ATMOSPHERE_GENERATOR.FIXED = true;
+
+  MOVE(RETINAL_SCANNER, ATMOSPHERE_GENERATOR, "ON");
+  MOVE(BIG_GREEN_BUTTON, ATMOSPHERE_GENERATOR, "ON");
+  MOVE(ATMOSPHERE_GENERATOR, ATMOSPHERE_CONTROL);
+
+  UNDERSTAND("DRINKING", SEQUENCE(KEYWORD("DRINK"), THING("OBJECT")));
+  INSTEAD("DRINKING").WHEN(_ => _.OBJECT === SINK).THEN("I'M A ROBOT, WATER DOES NOT AGREE WITH ME");
+  INSTEAD("DRINKING").WHEN(_ => _.OBJECT === URINAL).THEN("ARE YOU SERIOUS?");
+  INSTEAD("DRINKING").WHEN(_ => _.OBJECT === WINDOW_CLEANER).THEN("SURE, I LOVE THIS STUFF");
+  INSTEAD("DRINKING").WHEN(_ => _.OBJECT === LEMONADE).THEN("SMELLS MORE LIKE LEMON PLEDGE");
+  INSTEAD("DRINKING").WHEN(_ => _.OBJECT === CODE_RED).THEN("SODA MAKES MY INSIDES STICKY");
+  INSTEAD("DRINKING").THEN("THAT DOESN'T SEEM LIKE A GOOD IDEA");
+
+  
+/***
+ *    ╔═╗╔═╗╔╦╗╔═╗  ╔═╗╔╦╗╔═╗╦═╗╔╦╗
+ *    ║ ╦╠═╣║║║║╣   ╚═╗ ║ ╠═╣╠╦╝ ║ 
+ *    ╚═╝╩ ╩╩ ╩╚═╝  ╚═╝ ╩ ╩ ╩╩╚═ ╩ 
+ */
+
   // Start the game in the correct room.
-  CURRENT_ROOM = CLOSET;
+  CURRENT_ROOM = SWING_ROOM;
   SELF.DESCRIPTION = "This is me. I am a sophisticated robot controlled remotely through a state-of-the-art AI command interface called a *command prompt*.";
 
   /*
